@@ -27,7 +27,15 @@ public:
 	virtual void UnHighlightActor() override;
 	//~ End IHighlightInterface.
 
+	//~ Begin ICombatInterface
+	virtual int32 GetPlayerLevel() override;	
+	//~ End ICombatInterface
+
 private:
 	// 初始化 Ability Actor Info.
 	virtual void InitAbilityActorInfo() override;
+
+protected:
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Character Class Defaults")	
+	int32 m_Level;
 };

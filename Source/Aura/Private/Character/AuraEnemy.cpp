@@ -44,6 +44,11 @@ void AAuraEnemy::UnHighlightActor()
 	m_Weapon->SetRenderCustomDepth(false);
 }
 
+int32 AAuraEnemy::GetPlayerLevel()
+{
+	return m_Level;
+}
+
 void AAuraEnemy::InitAbilityActorInfo()
 {
 	Super::InitAbilityActorInfo();

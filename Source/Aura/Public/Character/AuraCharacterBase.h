@@ -5,13 +5,15 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "AbilitySystemInterface.h"
+#include "Interaction/CombatInterface.h"
 #include "AuraCharacterBase.generated.h"
 
 class UAbilitySystemComponent;
 class UAttributeSet;
+class UGameplayEffect;
 
 UCLASS(Abstract)
-class AURA_API AAuraCharacterBase : public ACharacter, public IAbilitySystemInterface
+class AURA_API AAuraCharacterBase : public ACharacter, public IAbilitySystemInterface, public ICombatInterface
 {
 	GENERATED_BODY()
 
@@ -31,6 +33,12 @@ public:
 protected:
 	// 初始化 Ability Actor Info.
 	virtual void InitAbilityActorInfo();
+
+	// 对角色自身应用 GE
+	void ApplyEffectToSelf(const TSubclassOf<UGameplayEffect>& GameplayEffectClass, float Level) const;
+
+	// 初始化默认属性
+	void InitializeDefaultAttributes() const;
 	
 protected:
 	// 角色手持的武器
@@ -44,4 +52,16 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UAttributeSet> m_AttributeSet = nullptr;
+
+	// 该 GE 用来初始化 Primary 属性
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attributes")
+	TSubclassOf<UGameplayEffect> m_DefaultPrimaryAttributesEffect;
+
+	// 该 GE 用来初始化 Secondary 属性
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attributes")
+	TSubclassOf<UGameplayEffect> m_DefaultSecondaryAttributesEffect;
+
+	// 该 GE 用来初始化 Vital 属性
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attributes")
+	TSubclassOf<UGameplayEffect> m_DefaultVitalAttributesEffect;
 };

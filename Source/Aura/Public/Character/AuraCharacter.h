@@ -24,6 +24,11 @@ protected:
 	virtual void PossessedBy(AController* NewController) override;
 	virtual void OnRep_PlayerState() override;
 
+public:
+	//~ Begin ICombatInterface
+	virtual int32 GetPlayerLevel() override;
+	//~ End ICombatInterface
+	
 private:
 	// 初始化 Ability Actor Info.
 	virtual void InitAbilityActorInfo() override;

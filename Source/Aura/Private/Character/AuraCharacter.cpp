@@ -58,6 +58,13 @@ void AAuraCharacter::OnRep_PlayerState()
 	InitAbilityActorInfo();
 }
 
+int32 AAuraCharacter::GetPlayerLevel()
+{
+	const AAuraPlayerState* AuraPlayerState = GetPlayerState<AAuraPlayerState>();
+	check(AuraPlayerState);
+	return AuraPlayerState->GetPlayerLevel();
+}
+
 void AAuraCharacter::InitAbilityActorInfo()
 {
 	Super::InitAbilityActorInfo();
@@ -82,4 +89,7 @@ void AAuraCharacter::InitAbilityActorInfo()
 		}
 	}
 	//~ End 初始化 Overlay Widget!!!
+
+	// 初始化默认属性
+	InitializeDefaultAttributes();
 }

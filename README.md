@@ -648,7 +648,7 @@
 
 >
 
-7. 在游戏运行中，用波浪键打开控制台，输入 `showdebug abilitysystem` 可以打开 **ability system 【调试】**；
+7. 在游戏运行中，用波浪键打开控制台，输入 `showdebug abilitysystem` 可以打开 **ability system 【调试】（这个已经弃用了，后面会用 Gameplay Debugger）**；
    > 它显示 Avatar，Owner，OwnedTags ... 很多有用的调制信息，可以按 PageUp 和 PageDown 来切换目标
    
    ![](./Res/ReadMe_Res/19_ShowDebug_AbilitySystem.png)
@@ -912,52 +912,52 @@ protected:
 
 ## 监听属性值更改
 
-   了解函数 ***AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate***
+了解函数 ***AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate***
 
-    ```cpp
-    // 参考
+```cpp
+// 参考
 
-    // OverlayWidgetController.cpp
-    // ---------------------------
-    void UOverlayWidgetController::BindCallbacksToDependences()
+// OverlayWidgetController.cpp
+// ---------------------------
+void UOverlayWidgetController::BindCallbacksToDependences()
+{
+    Super::BindCallbacksToDependences();
+
+    const UAuraAttributeSet* AuraAttributeSet = Cast<UAuraAttributeSet>(AttributeSet);
+
+    /** Bind Callbacks */
+    AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
+        AuraAttributeSet->GetHealthAttribute()).AddUObject(this, &UOverlayWidgetController::HealthChanged);
+    AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
+        AuraAttributeSet->GetMaxHealthAttribute()).AddUObject(this, &UOverlayWidgetController::MaxHealthChanged);
+}
+
+void UOverlayWidgetController::HealthChanged(const FOnAttributeChangeData& Data) const
+{
+    OnHealthChanged.Broadcast(Data.NewValue);
+}
+
+void UOverlayWidgetController::MaxHealthChanged(const FOnAttributeChangeData& Data) const
+{
+    OnMaxHealthChanged.Broadcast(Data.NewValue);
+}
+
+// AuraHUD.cpp
+// -----------
+UOverlayWidgetController* AAuraHUD::GetOverlayWidgetController(const FWidgetControllerParams& WCParams)
+{
+    if (OverlayWidgetController == nullptr)
     {
-        Super::BindCallbacksToDependences();
+        OverlayWidgetController = NewObject<UOverlayWidgetController>(this, OverlayWidgetControllerClass);
+        OverlayWidgetController->SetWidgetControllerParams(WCParams);
 
-        const UAuraAttributeSet* AuraAttributeSet = Cast<UAuraAttributeSet>(AttributeSet);
-
-        /** Bind Callbacks */
-        AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
-            AuraAttributeSet->GetHealthAttribute()).AddUObject(this, &UOverlayWidgetController::HealthChanged);
-        AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
-            AuraAttributeSet->GetMaxHealthAttribute()).AddUObject(this, &UOverlayWidgetController::MaxHealthChanged);
-    }
-
-    void UOverlayWidgetController::HealthChanged(const FOnAttributeChangeData& Data) const
-    {
-        OnHealthChanged.Broadcast(Data.NewValue);
-    }
-
-    void UOverlayWidgetController::MaxHealthChanged(const FOnAttributeChangeData& Data) const
-    {
-        OnMaxHealthChanged.Broadcast(Data.NewValue);
-    }
-
-    // AuraHUD.cpp
-    // -----------
-    UOverlayWidgetController* AAuraHUD::GetOverlayWidgetController(const FWidgetControllerParams& WCParams)
-    {
-        if (OverlayWidgetController == nullptr)
-        {
-            OverlayWidgetController = NewObject<UOverlayWidgetController>(this, OverlayWidgetControllerClass);
-            OverlayWidgetController->SetWidgetControllerParams(WCParams);
-
-            // 2. 为所有依赖 Widget 绑定回调
-            OverlayWidgetController->BindCallbacksToDependences();
-            return OverlayWidgetController;
-        }
+        // 2. 为所有依赖 Widget 绑定回调
+        OverlayWidgetController->BindCallbacksToDependences();
         return OverlayWidgetController;
     }
-    ```
+    return OverlayWidgetController;
+}
+```
 
 >
 
@@ -966,7 +966,7 @@ protected:
 
 >
 
-8. **Widgets 依赖于 WidgetController，而 WidgetController 又依赖于 Model 中的类**
+2. **Widgets 依赖于 WidgetController，而 WidgetController 又依赖于 Model 中的类**
 
 <br>
 
@@ -2378,7 +2378,7 @@ UAuraAttributeSet::UAuraAttributeSet()
 
 还有一个调试方法：
 
-输入命令：GameplayDebugger.AutoCreateGameplayDebuggerManager
+**输入命令：GameplayDebugger.AutoCreateGameplayDebuggerManager**
 
 因为我的按键原因我改了设置：
 
@@ -2483,6 +2483,1287 @@ void UAuraAttributeSet::PostGameplayEffectExecute(const struct FGameplayEffectMo
 ```
 
 再次调试应该可以正常进行限制！
+
+<br>
+<br>
+
+# 第7节：RPG Attributes
+
+新增几个 Primary Attribute
+
+AuraAttributeSet.h
+
+```cpp
+UCLASS()
+class AURA_API UAuraAttributeSet : public UAttributeSet
+{
+	GENERATED_BODY()
+	
+public:
+	UAuraAttributeSet();
+
+protected:
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	/** Called just before any modification happens to an attribute. */
+	virtual void PreAttributeBaseChange(const FGameplayAttribute& Attribute, float& NewValue) const override;
+	
+	/**
+	 * 在执行游戏效果后调用，用于修改某个属性的基础值。此后不能再进行任何修改。
+	 * 注意，此函数仅在 “执行” 阶段被调用。例如，对某个属性 “基础值” 的修改。它不会在应用游戏效果（如持续 5 秒且增加 10 点移动速度的增益效果）时被调用。
+	 */
+	virtual void PostGameplayEffectExecute(const struct FGameplayEffectModCallbackData& Data) override;
+
+public:
+	/**
+	 * Primary Attributes
+	 */
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Strength, Category = "Primary Attributes")
+	FGameplayAttributeData m_Strength;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_Strength);
+
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Intelligence, Category = "Primary Attributes")
+	FGameplayAttributeData m_Intelligence;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_Intelligence);
+
+	// 韧性
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Resilience, Category = "Primary Attributes")
+	FGameplayAttributeData m_Resilience;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_Resilience);
+
+	// 活力
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Vigor, Category = "Primary Attributes")
+	FGameplayAttributeData m_Vigor;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_Vigor);
+
+	/**
+	 * Vital Attributes
+	 */
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Health, Category = "Vital Attributes")
+	FGameplayAttributeData m_Health;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_Health);
+
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MaxHealth, Category = "Vital Attributes")
+	FGameplayAttributeData m_MaxHealth;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_MaxHealth);
+
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Mana, Category = "Vital Attributes")
+	FGameplayAttributeData m_Mana;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_Mana);
+
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MaxMana, Category = "Vital Attributes")
+	FGameplayAttributeData m_MaxMana;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_MaxMana);
+
+	UFUNCTION()
+	void OnRep_Health(const FGameplayAttributeData& OldHealth) const;
+
+	UFUNCTION()
+	void OnRep_MaxHealth(const FGameplayAttributeData& OldMaxHealth) const;
+
+	UFUNCTION()
+	void OnRep_Mana(const FGameplayAttributeData& OldMana) const;
+
+	UFUNCTION()
+	void OnRep_MaxMana(const FGameplayAttributeData& OldMaxMana) const;
+
+	UFUNCTION()
+	void OnRep_Strength(const FGameplayAttributeData& OldStrength) const;
+
+	UFUNCTION()
+	void OnRep_Intelligence(const FGameplayAttributeData& OldIntelligence) const;
+
+	UFUNCTION()
+	void OnRep_Resilience(const FGameplayAttributeData& OldResilience) const;
+
+	UFUNCTION()
+	void OnRep_Vigor(const FGameplayAttributeData& OldVigor) const;
+
+private:
+	void SetEffectProperties(const struct FGameplayEffectModCallbackData& Data, FEffectProperties& Props) const;
+};
+```
+
+AuraAttributeSet.cpp
+
+```cpp
+void UAuraAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	/**
+	 * 对于 DOREPLIFETIME_CONDITION_NOTIFY 来说 REPNOTIFY_OnChanged 条件默认启用，是当变量值改变时才复制
+	 * 对于 GAS，我们无论如何都想复制它，因为如果我们设置它，我们可能想要响应设置它的行为。
+	 * 无论我们将其设置为新值还是其自身的相同值，您都可能想要响应，即使它的数值没有改变。
+	 * 因此这里我们使用 REPNOTIFY_Always
+	 */
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_Strength, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_Intelligence, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_Resilience, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_Vigor, COND_None, REPNOTIFY_Always);
+	
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_Health, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_MaxHealth, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_Mana, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_MaxMana, COND_None, REPNOTIFY_Always);
+}
+
+void UAuraAttributeSet::OnRep_Strength(const FGameplayAttributeData& OldStrength) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UAuraAttributeSet, m_Strength, OldStrength);
+}
+
+void UAuraAttributeSet::OnRep_Intelligence(const FGameplayAttributeData& OldIntelligence) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UAuraAttributeSet, m_Intelligence, OldIntelligence);
+}
+
+void UAuraAttributeSet::OnRep_Resilience(const FGameplayAttributeData& OldResilience) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UAuraAttributeSet, m_Resilience, OldResilience);
+}
+
+void UAuraAttributeSet::OnRep_Vigor(const FGameplayAttributeData& OldVigor) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UAuraAttributeSet, m_Vigor, OldVigor);
+}
+```
+
+AuraPlayerState.h
+
+> 这里将 m_AbilitySystemComponent 属性标记为 VisibleAnywhere，因为下面要在蓝图设置 DataTable 来测试初始化
+
+```cpp
+protected:
+	// 玩家会在 PlayerState 中构造 GAS 相关信息
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UAbilitySystemComponent> m_AbilitySystemComponent = nullptr;
+```
+
+<br>
+
+## 从数据表中初始化属性
+
+在 Blueprints/AbilitySystem/Data 目录下新建 DataTable
+
+DT_InitialPrimaryAttributes
+
+![](./Res/ReadMe_Res2/80.png)
+
+![](./Res/ReadMe_Res2/81.png)
+
+![](./Res/ReadMe_Res2/82.png)
+
+![](./Res/ReadMe_Res2/83.png)
+
+## 用 Gameplay Effect 初始化属性【推荐】
+
+添加 m_DefaultPrimaryAttributesEffect 属性 和 InitializePrimaryAttributes() 接口
+
+AuraCharacterBase.h
+
+```cpp
+UCLASS(Abstract)
+class AURA_API AAuraCharacterBase : public ACharacter, public IAbilitySystemInterface
+{
+	GENERATED_BODY()
+
+public:
+	AAuraCharacterBase();
+
+protected:
+	virtual void BeginPlay() override;
+
+public:
+	//~ Begin IAbilitySystemInterface.
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	//~ End IAbilitySystemInterface.
+	
+	FORCEINLINE UAttributeSet* GetAttributeSet() const { return m_AttributeSet; }
+
+protected:
+	// 初始化 Ability Actor Info.
+	virtual void InitAbilityActorInfo();
+
+	// 初始化 Primary 属性
+	void InitializePrimaryAttributes() const;
+	
+protected:
+	// 角色手持的武器
+	UPROPERTY(EditAnywhere, Category = "Combat")
+	TObjectPtr<USkeletalMeshComponent> m_Weapon;
+
+	// 这里在基类存储一份 AbilitySystemComponent 和 AttributeSet 但是不在基类中构造
+	// 玩家会在 PlayerState 中构造，敌人 AI 会在敌人类中构造
+	UPROPERTY()
+	TObjectPtr<UAbilitySystemComponent> m_AbilitySystemComponent = nullptr;
+
+	UPROPERTY()
+	TObjectPtr<UAttributeSet> m_AttributeSet = nullptr;
+
+	// 该 GE 用来初始化 Primary 属性
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attributes")
+	TSubclassOf<UGameplayEffect> m_DefaultPrimaryAttributesEffect;
+```
+
+AuraCharacterBase.cpp
+
+```cpp
+void AAuraCharacterBase::InitializePrimaryAttributes() const
+{
+	check(IsValid(GetAbilitySystemComponent()));
+	check(m_DefaultPrimaryAttributesEffect);
+	const FGameplayEffectContextHandle EffectContextHandle = GetAbilitySystemComponent()->MakeEffectContext();
+	const FGameplayEffectSpecHandle EffectSpecHandl = GetAbilitySystemComponent()->MakeOutgoingSpec(m_DefaultPrimaryAttributesEffect, 1.0f, EffectContextHandle);
+	GetAbilitySystemComponent()->ApplyGameplayEffectSpecToTarget(*EffectSpecHandl.Data.Get(), GetAbilitySystemComponent());
+}
+```
+
+然后在 AAuraCharacter::InitAbilityActorInfo() 底部添加：
+
+```cpp
+// 初始化 Primary 属性
+InitializePrimaryAttributes();
+```
+
+打开编辑器：
+
+在 Blueprints/AbilitySystem/ 目录下新建文件夹 GameplayEffects
+
+新建一个 GE_AuraPrimaryAttributesEffect 游戏效果：
+
+![](./Res/ReadMe_Res2/84.png)
+
+![](./Res/ReadMe_Res2/85.png)
+
+![](./Res/ReadMe_Res2/86.png)
+
+![](./Res/ReadMe_Res2/87.png)
+
+<br>
+
+## Attribute Based Modifiers
+
+> 注意：我们是可以给 GE 添加多个修饰符的
+
+现在，到目前为止，我们所有的游戏效果（GE）都是用 Scalable float 来表示其修饰符大小，让我们试试 Attribute Based 修饰符：
+
+![](./Res/ReadMe_Res2/88.png)
+
+![](./Res/ReadMe_Res2/89.png)
+
+![](./Res/ReadMe_Res2/90.png)
+
+如果你在测试时是对象给自己施加效果（比如角色给自己加血），那么 Source 和 Target 是同一个对象，所以结果当然相同：
+
+![](./Res/ReadMe_Res2/91.png)
+
+![](./Res/ReadMe_Res2/92.png)
+
+![](./Res/ReadMe_Res2/93.png)
+
+<br>
+
+## 修饰符（Modifier）操作的顺序
+
+**Gameplay Effect 中的修饰符是从上往下按顺序操作的**
+
+> 测试的时候可以把这个限制暂时取消下
+
+```cpp
+void UAuraAttributeSet::PreAttributeBaseChange(const FGameplayAttribute& Attribute, float& NewValue) const
+{
+	Super::PreAttributeBaseChange(Attribute, NewValue);
+
+	/** 限制属性 */
+	if (Attribute == Getm_HealthAttribute())
+	{
+		// NewValue = FMath::Clamp(NewValue, 0.0f, Getm_MaxHealth());
+	}
+	if (Attribute == Getm_ManaAttribute())
+	{
+		// NewValue = FMath::Clamp(NewValue, 0.0f, Getm_MaxMana());
+	}
+}
+```
+
+![](./Res/ReadMe_Res2/94.png)
+
+![](./Res/ReadMe_Res2/95.png)
+
+![](./Res/ReadMe_Res2/96.png)
+
+![](./Res/ReadMe_Res2/97.png)
+
+<br>
+
+## 修饰符系数（Modifier Coefficients）
+
+> 想一想，如果你想为你的 Health 添加一个等于 Strength * 10 或 Strength * 0.1f 的值，该怎么办，或者 Strength * 0.1 + 12
+
+![](./Res/ReadMe_Res2/98.png)
+
+![](./Res/ReadMe_Res2/99.png)
+
+这给了我们很大的灵活性，但还不够，我们不能以这种方式创建一些任意复杂的计算。
+
+<br>
+
+## 次要属性（Secondary Attributes）
+
+我们将创建次要属性，这些属性依赖于主要属性，有些也依赖次要属性
+
+比如，主要属性更改，会影响次要属性的值：活力值增加，生命回复速度加快（同时联想到可以添加一个无限效果来实现）
+
+![](./Res/ReadMe_Res2/100.png)
+
+<br>
+
+> 下面代码直接复制就行
+
+AuraAttributeSet.h
+
+```cpp
+// Copyright AnnihilateSword.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "AbilitySystemComponent.h"
+#include "AttributeSet.h"
+#include "AuraAttributeSet.generated.h"
+
+#define ATTRIBUTE_ACCESSORS(ClassName, PropertyName) \
+	GAMEPLAYATTRIBUTE_PROPERTY_GETTER(ClassName, PropertyName) \
+	GAMEPLAYATTRIBUTE_VALUE_GETTER(PropertyName) \
+	GAMEPLAYATTRIBUTE_VALUE_SETTER(PropertyName) \
+	GAMEPLAYATTRIBUTE_VALUE_INITTER(PropertyName)
+
+USTRUCT()
+struct FEffectProperties
+{
+	GENERATED_BODY()
+
+	FEffectProperties() {}
+
+	FGameplayEffectContextHandle EffectContextHandle;
+	
+	/** Source */
+	UPROPERTY()
+	UAbilitySystemComponent* SourceASC = nullptr;
+
+	UPROPERTY()
+	AActor* SourceAvatarActor = nullptr;
+
+	UPROPERTY()
+	APlayerController* SourcePlayerController = nullptr;
+
+	UPROPERTY()
+	ACharacter* SourceCharacter = nullptr;
+
+	/** Target */
+	UPROPERTY()
+	UAbilitySystemComponent* TargetASC = nullptr;
+
+	UPROPERTY()
+	AActor* TargetAvatarActor = nullptr;
+
+	UPROPERTY()
+	APlayerController* TargetPlayerController = nullptr;
+
+	UPROPERTY()
+	ACharacter* TargetCharacter = nullptr;
+};
+
+/**
+ * 
+ */
+UCLASS()
+class AURA_API UAuraAttributeSet : public UAttributeSet
+{
+	GENERATED_BODY()
+	
+public:
+	UAuraAttributeSet();
+
+protected:
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	/** Called just before any modification happens to an attribute. */
+	virtual void PreAttributeBaseChange(const FGameplayAttribute& Attribute, float& NewValue) const override;
+	
+	/**
+	 * 在执行游戏效果后调用，用于修改某个属性的基础值。此后不能再进行任何修改。
+	 * 注意，此函数仅在 “执行” 阶段被调用。例如，对某个属性 “基础值” 的修改。它不会在应用游戏效果（如持续 5 秒且增加 10 点移动速度的增益效果）时被调用。
+	 */
+	virtual void PostGameplayEffectExecute(const struct FGameplayEffectModCallbackData& Data) override;
+
+public:
+	/**
+	 * Primary Attributes
+	 */
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Strength, Category = "Primary Attributes")
+	FGameplayAttributeData m_Strength;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_Strength);
+
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Intelligence, Category = "Primary Attributes")
+	FGameplayAttributeData m_Intelligence;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_Intelligence);
+
+	// 韧性
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Resilience, Category = "Primary Attributes")
+	FGameplayAttributeData m_Resilience;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_Resilience);
+
+	// 活力
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Vigor, Category = "Primary Attributes")
+	FGameplayAttributeData m_Vigor;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_Vigor);
+
+	/**
+	 * Secondary Attributes
+	 */
+	// 护甲
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Armor, Category = "Secondary Attributes")
+	FGameplayAttributeData m_Armor;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_Armor);
+
+	// 护甲穿透
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_ArmorPenetration, Category = "Secondary Attributes")
+	FGameplayAttributeData m_ArmorPenetration;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_ArmorPenetration);
+
+	// 格挡几率
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_BlockChance, Category = "Secondary Attributes")
+	FGameplayAttributeData m_BlockChance;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_BlockChance);
+
+	// 暴击率
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_CriticalHitChance, Category = "Secondary Attributes")
+	FGameplayAttributeData m_CriticalHitChance;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_CriticalHitChance);
+
+	// 暴击伤害
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_CriticalHitDamage, Category = "Secondary Attributes")
+	FGameplayAttributeData m_CriticalHitDamage;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_CriticalHitDamage);
+
+	// 暴击抗性
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_CriticalHitResistance, Category = "Secondary Attributes")
+	FGameplayAttributeData m_CriticalHitResistance;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_CriticalHitResistance);
+
+	// 生命回复
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_HealthRegeneration, Category = "Secondary Attributes")
+	FGameplayAttributeData m_HealthRegeneration;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_HealthRegeneration);
+
+	// 法力回复
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_ManaRegeneration, Category = "Secondary Attributes")
+	FGameplayAttributeData m_ManaRegeneration;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_ManaRegeneration);
+
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MaxHealth, Category = "Secondary Attributes")
+	FGameplayAttributeData m_MaxHealth;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_MaxHealth);
+	
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MaxMana, Category = "Secondary Attributes")
+	FGameplayAttributeData m_MaxMana;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_MaxMana);
+	
+	/**
+	 * Vital Attributes
+	 */
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Health, Category = "Vital Attributes")
+	FGameplayAttributeData m_Health;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_Health);
+	
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Mana, Category = "Vital Attributes")
+	FGameplayAttributeData m_Mana;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_Mana);
+
+
+	////////////////////////////////////
+	/// OnRep_ Functions
+	
+	UFUNCTION()
+	void OnRep_Health(const FGameplayAttributeData& OldHealth) const;
+
+	UFUNCTION()
+	void OnRep_Mana(const FGameplayAttributeData& OldMana) const;
+
+	UFUNCTION()
+	void OnRep_Strength(const FGameplayAttributeData& OldStrength) const;
+
+	UFUNCTION()
+	void OnRep_Intelligence(const FGameplayAttributeData& OldIntelligence) const;
+
+	UFUNCTION()
+	void OnRep_Resilience(const FGameplayAttributeData& OldResilience) const;
+
+	UFUNCTION()
+	void OnRep_Vigor(const FGameplayAttributeData& OldVigor) const;
+
+	UFUNCTION()
+	void OnRep_Armor(const FGameplayAttributeData& OldArmor) const;
+
+	UFUNCTION()
+	void OnRep_ArmorPenetration(const FGameplayAttributeData& OldArmorPenetration) const;
+
+	UFUNCTION()
+	void OnRep_BlockChance(const FGameplayAttributeData& OldBlockChance) const;
+
+	UFUNCTION()
+	void OnRep_CriticalHitChance(const FGameplayAttributeData& OldCriticalHitChance) const;
+
+	UFUNCTION()
+	void OnRep_CriticalHitDamage(const FGameplayAttributeData& OldCriticalHitDamage) const;
+
+	UFUNCTION()
+	void OnRep_CriticalHitResistance(const FGameplayAttributeData& OldCriticalHitResistance) const;
+
+	UFUNCTION()
+	void OnRep_HealthRegeneration(const FGameplayAttributeData& OldHealthRegeneration) const;
+
+	UFUNCTION()
+	void OnRep_ManaRegeneration(const FGameplayAttributeData& OldManaRegeneration) const;
+
+	UFUNCTION()
+	void OnRep_MaxHealth(const FGameplayAttributeData& OldMaxHealth) const;
+
+	UFUNCTION()
+	void OnRep_MaxMana(const FGameplayAttributeData& OldMaxMana) const;
+
+private:
+	void SetEffectProperties(const struct FGameplayEffectModCallbackData& Data, FEffectProperties& Props) const;
+};
+```
+
+AuraAttributeSet.cpp
+
+```cpp
+// Copyright AnnihilateSword.
+
+
+#include "AbilitySystem/AuraAttributeSet.h"
+
+#include "AbilitySystemBlueprintLibrary.h"
+#include "GameplayEffectExtension.h"
+#include "Net/UnrealNetwork.h"
+
+UAuraAttributeSet::UAuraAttributeSet()
+{
+	Initm_Health(10.0f);
+	Initm_Mana(10.0f);
+}
+
+void UAuraAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	/**
+	 * 对于 DOREPLIFETIME_CONDITION_NOTIFY 来说 REPNOTIFY_OnChanged 条件默认启用，是当变量值改变时才复制
+	 * 对于 GAS，我们无论如何都想复制它，因为如果我们设置它，我们可能想要响应设置它的行为。
+	 * 无论我们将其设置为新值还是其自身的相同值，您都可能想要响应，即使它的数值没有改变。
+	 * 因此这里我们使用 REPNOTIFY_Always
+	 */
+	// Primary Attributes
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_Strength, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_Intelligence, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_Resilience, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_Vigor, COND_None, REPNOTIFY_Always);
+	
+	// Secondary Attributes
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_Armor, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_ArmorPenetration, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_BlockChance, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_CriticalHitChance, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_CriticalHitDamage, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_CriticalHitResistance, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_HealthRegeneration, COND_None, REPNOTIFY_Always);	
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_ManaRegeneration, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_MaxHealth, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_MaxMana, COND_None, REPNOTIFY_Always);
+
+	// Vital Attributes
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_Health, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UAuraAttributeSet, m_Mana, COND_None, REPNOTIFY_Always);
+}
+
+void UAuraAttributeSet::PreAttributeBaseChange(const FGameplayAttribute& Attribute, float& NewValue) const
+{
+	Super::PreAttributeBaseChange(Attribute, NewValue);
+
+	/** 限制属性 */
+	if (Attribute == Getm_HealthAttribute())
+	{
+		NewValue = FMath::Clamp(NewValue, 0.0f, Getm_MaxHealth());
+	}
+	if (Attribute == Getm_ManaAttribute())
+	{
+		NewValue = FMath::Clamp(NewValue, 0.0f, Getm_MaxMana());
+	}
+}
+
+void UAuraAttributeSet::SetEffectProperties(const struct FGameplayEffectModCallbackData& Data, FEffectProperties& Props) const
+{
+	// Source = causer of the effect, Target = target of the effect (owner of this AS -> AttributeSet)
+
+	Props.EffectContextHandle = Data.EffectSpec.GetContext();
+	Props.SourceASC = Props.EffectContextHandle.GetOriginalInstigatorAbilitySystemComponent();
+
+	if (IsValid(Props.SourceASC) && Props.SourceASC->AbilityActorInfo.IsValid())
+	{
+		Props.SourceAvatarActor = Props.SourceASC->GetAvatarActor();
+		Props.SourcePlayerController = Props.SourceASC->AbilityActorInfo->PlayerController.Get();
+		// 有时候我们的 ASC 挂在的 Actor 上可能不能获取到 PC，我们可以尝试通过 Pawn 直接获取
+		if (Props.SourcePlayerController == nullptr && Props.SourceAvatarActor != nullptr)
+		{
+			if (const APawn* Pawn = Cast<APawn>(Props.SourceAvatarActor))
+			{
+				Props.SourcePlayerController = Cast<APlayerController>(Pawn->GetController());
+			}
+		}
+		if (IsValid(Props.SourcePlayerController))
+		{
+			Props.SourceCharacter = Props.SourcePlayerController->GetCharacter();
+		}
+	}
+
+	if (Data.Target.AbilityActorInfo.IsValid())
+	{
+		Props.TargetAvatarActor = Data.Target.GetAvatarActor();
+		Props.TargetPlayerController = Data.Target.AbilityActorInfo->PlayerController.Get();
+		if (IsValid(Props.TargetPlayerController))
+		{
+			Props.TargetCharacter = Props.TargetPlayerController->GetCharacter();
+		}
+		Props.TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Props.TargetAvatarActor);
+	}
+}
+
+void UAuraAttributeSet::PostGameplayEffectExecute(const struct FGameplayEffectModCallbackData& Data)
+{
+	Super::PostGameplayEffectExecute(Data);
+
+	/**
+	 * 我们可以在这里收集大量信息，这些数据可以存储在一个结构里，
+	 * 然后更新的下面逻辑可以用一个单独函数封装起来，这样我们可以轻松访问这些数据，
+	 * 当实现更复杂的机制和战斗时，我们会使用它们
+	 */
+	FEffectProperties Props;
+	SetEffectProperties(Data, Props);
+}
+
+void UAuraAttributeSet::OnRep_Health(const FGameplayAttributeData& OldHealth) const
+{
+	// 负责通知 AbilitySystemComponent (ASC) 属性被复制了，ASC 注册这个更改，并跟踪旧值，以防万一需要回滚任何内容
+	// 请记住，在预测的情况下，如果服务器认为发生变化，则可以回滚更改并撤消它们
+	// @see https://dev.epicgames.com/documentation/en-us/unreal-engine/gameplay-attributes-and-attribute-sets-for-the-gameplay-ability-system-in-unreal-engine#replication
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UAuraAttributeSet, m_Health, OldHealth);
+}
+
+void UAuraAttributeSet::OnRep_Mana(const FGameplayAttributeData& OldMana) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UAuraAttributeSet, m_Mana, OldMana);
+}
+
+void UAuraAttributeSet::OnRep_Strength(const FGameplayAttributeData& OldStrength) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UAuraAttributeSet, m_Strength, OldStrength);
+}
+
+void UAuraAttributeSet::OnRep_Intelligence(const FGameplayAttributeData& OldIntelligence) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UAuraAttributeSet, m_Intelligence, OldIntelligence);
+}
+
+void UAuraAttributeSet::OnRep_Resilience(const FGameplayAttributeData& OldResilience) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UAuraAttributeSet, m_Resilience, OldResilience);
+}
+
+void UAuraAttributeSet::OnRep_Vigor(const FGameplayAttributeData& OldVigor) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UAuraAttributeSet, m_Vigor, OldVigor);
+}
+
+void UAuraAttributeSet::OnRep_Armor(const FGameplayAttributeData& OldArmor) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UAuraAttributeSet, m_Armor, OldArmor);
+}
+
+void UAuraAttributeSet::OnRep_ArmorPenetration(const FGameplayAttributeData& OldArmorPenetration) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UAuraAttributeSet, m_ArmorPenetration, OldArmorPenetration);
+}
+
+void UAuraAttributeSet::OnRep_BlockChance(const FGameplayAttributeData& OldBlockChance) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UAuraAttributeSet, m_BlockChance, OldBlockChance);
+}
+
+void UAuraAttributeSet::OnRep_CriticalHitChance(const FGameplayAttributeData& OldCriticalHitChance) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UAuraAttributeSet, m_CriticalHitChance, OldCriticalHitChance);
+}
+
+void UAuraAttributeSet::OnRep_CriticalHitDamage(const FGameplayAttributeData& OldCriticalHitDamage) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UAuraAttributeSet, m_CriticalHitDamage, OldCriticalHitDamage);
+}
+
+void UAuraAttributeSet::OnRep_CriticalHitResistance(const FGameplayAttributeData& OldCriticalHitResistance) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UAuraAttributeSet, m_CriticalHitResistance, OldCriticalHitResistance);
+}
+
+void UAuraAttributeSet::OnRep_HealthRegeneration(const FGameplayAttributeData& OldHealthRegeneration) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UAuraAttributeSet, m_HealthRegeneration, OldHealthRegeneration);
+}
+
+void UAuraAttributeSet::OnRep_ManaRegeneration(const FGameplayAttributeData& OldManaRegeneration) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UAuraAttributeSet, m_ManaRegeneration, OldManaRegeneration);
+}
+
+void UAuraAttributeSet::OnRep_MaxHealth(const FGameplayAttributeData& OldMaxHealth) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UAuraAttributeSet, m_MaxHealth, OldMaxHealth);
+}
+
+void UAuraAttributeSet::OnRep_MaxMana(const FGameplayAttributeData& OldMaxMana) const
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UAuraAttributeSet, m_MaxMana, OldMaxMana);
+}
+
+```
+
+<br>
+
+## 驱动属性
+
+> 如果我们的 Armor 依赖于 韧性（Resilience），那么每次韧性发送改变时，Armor 都会变化
+
+现在 AuraCharacterBase 做了一些修改
+
+```cpp
+protected:
+	// 初始化 Ability Actor Info.
+	virtual void InitAbilityActorInfo();
+
+	// 对角色自身应用 GE
+	void ApplyEffectToSelf(const TSubclassOf<UGameplayEffect>& GameplayEffectClass, float Level) const;
+
+	// 初始化默认属性
+	void InitializeDefaultAttributes() const;
+```
+
+
+```cpp
+	UPROPERTY()
+	TObjectPtr<UAttributeSet> m_AttributeSet = nullptr;
+
+	// 该 GE 用来初始化 Primary 属性
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attributes")
+	TSubclassOf<UGameplayEffect> m_DefaultPrimaryAttributesEffect;
+
+	// 该 GE 用来初始化 Secondary 属性
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attributes")
+	TSubclassOf<UGameplayEffect> m_DefaultSecondaryAttributesEffect;
+```
+
+```cpp
+void AAuraCharacterBase::ApplyEffectToSelf(const TSubclassOf<UGameplayEffect>& GameplayEffectClass, const float Level) const
+{
+	check(IsValid(GetAbilitySystemComponent()));
+	check(GameplayEffectClass);
+	const FGameplayEffectContextHandle EffectContextHandle = GetAbilitySystemComponent()->MakeEffectContext();
+	const FGameplayEffectSpecHandle EffectSpecHandl = GetAbilitySystemComponent()->MakeOutgoingSpec(GameplayEffectClass, Level, EffectContextHandle);
+	GetAbilitySystemComponent()->ApplyGameplayEffectSpecToTarget(*EffectSpecHandl.Data.Get(), GetAbilitySystemComponent());
+}
+
+void AAuraCharacterBase::InitializeDefaultAttributes() const
+{
+	// 因为次要属性是根据主要属性驱动的，我们先初始化主要属性
+	ApplyEffectToSelf(m_DefaultPrimaryAttributesEffect, 1.0f);
+	ApplyEffectToSelf(m_DefaultSecondaryAttributesEffect, 1.0f);
+}
+```
+
+新建一个 GE_AuraSecondaryAttributes，这里还新创建了一个文件夹 DefaultAttributes
+
+![](./Res/ReadMe_Res2/101.png)
+
+确保我们角色蓝图中设置这个变量，我们使用了 check，如果不设置会触发断言
+
+![](./Res/ReadMe_Res2/102.png)
+
+现在我们来设置一下我们的次要效果，**我们希望它是无限效果（Infinite Effect）**，下面是一个测试：
+
+> **这里 Modifier Op 设置的是 Override，其他的次要属性修饰符（Modifiers）也一样**
+
+![](./Res/ReadMe_Res2/103.png)
+
+![](./Res/ReadMe_Res2/104.png)
+
+![](./Res/ReadMe_Res2/105.png)
+
+![](./Res/ReadMe_Res2/106.png)
+
+> 事实上，许多 RPG 游戏在制作初期作为棋盘游戏进行测试，测试它们的数值关系是否符合预期。
+
+<br>
+
+花絮：
+
+![](./Res/ReadMe_Res2/107.png)
+
+![](./Res/ReadMe_Res2/108.png)
+
+<br>
+
+让我们继续填充完剩余的属性吧~
+
+![](./Res/ReadMe_Res2/109.png)
+
+![](./Res/ReadMe_Res2/110.png)
+
+![](./Res/ReadMe_Res2/111.png)
+
+![](./Res/ReadMe_Res2/112.png)
+
+![](./Res/ReadMe_Res2/113.png)
+
+我们很快就会看到 Gameplay Debugger 的局限性，当我们的属性越来越多时，在 Debug 中很难显示它们。
+
+> 这就是为什么像大多数 RPG 游戏一样，我们需要一个菜单来显示我们的属性值。我们现在需要一个属性菜单，它将是一个可以显示在屏幕上的小部件。
+
+<br>
+
+## 自定义计算（Custom Calculation）
+
+> 让我们影响属性的方式更加自定义
+
+![](./Res/ReadMe_Res2/114.png)
+
+![](./Res/ReadMe_Res2/115.png)
+
+你也可以把 Level 设置为一个 AttributeSet 中的属性，但我们觉得 Level 并不适合，GAS 中的 Attribute 一般具有更复杂的相互关系，而 Level 更像是一个角色升级时的计数器，是的我们会更具等级变化触发一些事情
+
+![](./Res/ReadMe_Res2/116.png)
+
+![](./Res/ReadMe_Res2/117.png)
+
+![](./Res/ReadMe_Res2/118.png)
+
+<br>
+
+## 玩家等级和 ICombatInterface
+
+![](./Res/ReadMe_Res2/119.png)
+
+![](./Res/ReadMe_Res2/120.png)
+
+![](./Res/ReadMe_Res2/121.png)
+
+ICombatInterface
+
+```cpp
+class AURA_API ICombatInterface
+{
+	GENERATED_BODY()
+
+	// Add interface functions to this class. This is the class that will be inherited to implement this interface.
+public:
+	virtual int32 GetPlayerLevel();
+};
+
+int32 ICombatInterface::GetPlayerLevel()
+{
+	return 0;
+}
+```
+
+AuraPlayerState.h
+
+```cpp
+UCLASS()
+class AURA_API AAuraPlayerState : public APlayerState, public IAbilitySystemInterface
+{
+	GENERATED_BODY()
+
+public:
+	AAuraPlayerState();
+
+	virtual void GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const override;
+
+	//~ Begin IAbilitySystemInterface.
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	//~ End IAbilitySystemInterface.
+	
+	FORCEINLINE UAttributeSet* GetAttributeSet() const { return m_AttributeSet; }
+
+	FORCEINLINE int32 GetPlayerLevel() const { return m_Level; }
+
+protected:
+	// 玩家会在 PlayerState 中构造 GAS 相关信息
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UAbilitySystemComponent> m_AbilitySystemComponent = nullptr;
+
+	UPROPERTY()
+	TObjectPtr<UAttributeSet> m_AttributeSet = nullptr;
+
+private:
+	UPROPERTY(VisibleAnywhere, ReplicatedUsing = OnRep_Level)
+	int32 m_Level = 1;
+
+	UFUNCTION()
+	void OnRep_Level(int32 OldLevel);
+};
+```
+
+AuraPlayerState.cpp
+
+```cpp
+void AAuraPlayerState::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(AAuraPlayerState, m_Level);
+}
+
+UAbilitySystemComponent* AAuraPlayerState::GetAbilitySystemComponent() const
+{
+	return m_AbilitySystemComponent;
+}
+
+void AAuraPlayerState::OnRep_Level(int32 OldLevel)
+{
+}
+```
+
+为敌人也加上 m_Level 变量：
+
+AuraEnemy.h
+
+```cpp
+UCLASS()
+class AURA_API AAuraEnemy : public AAuraCharacterBase, public IHighlightInterface
+{
+	GENERATED_BODY()
+
+public:
+	AAuraEnemy();
+	
+protected:
+	virtual void BeginPlay() override;
+
+public:
+	//~ Begin IHighlightInterface.
+	virtual void HighlightActor() override;
+	virtual void UnHighlightActor() override;
+	//~ End IHighlightInterface.
+
+	//~ Begin ICombatInterface
+	virtual int32 GetPlayerLevel() override;	
+	//~ End ICombatInterface
+
+private:
+	// 初始化 Ability Actor Info.
+	virtual void InitAbilityActorInfo() override;
+
+protected:
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Character Class Defaults")	
+	int32 m_Level;
+};
+
+```
+
+AuraEnemy.cpp
+
+```cpp
+int32 AAuraEnemy::GetPlayerLevel()
+{
+	return m_Level;
+}
+```
+
+修改 AuraCharacter
+
+```cpp
+public:
+	//~ Begin ICombatInterface
+	virtual int32 GetPlayerLevel() override;
+	//~ End ICombatInterface
+```
+
+```cpp
+int32 AAuraCharacter::GetPlayerLevel()
+{
+	const AAuraPlayerState* AuraPlayerState = GetPlayerState<AAuraPlayerState>();
+	check(AuraPlayerState);
+	return AuraPlayerState->GetPlayerLevel();
+}
+```
+
+<br>
+
+## 【MMC】 自定义计算类（Modifier Magnitude Calculations）
+
+![](./Res/ReadMe_Res2/122.png)
+
+> 文件夹用 MMC 也可以，随你喜好
+
+![](./Res/ReadMe_Res2/123.png)
+
+m_MaxHealth 将由我们这里创建的计算类决定
+
+> 当你第一次打开这个，你不知道做什么对吧^ ^，所以我们将一起做这个
+
+回顾下，我们之前有定义一些静态函数~
+
+![](./Res/ReadMe_Res2/124.png)
+
+MMC_MaxHealth.h
+
+```cpp
+UCLASS()
+class AURA_API UMMC_MaxHealth : public UGameplayModMagnitudeCalculation
+{
+	GENERATED_BODY()
+
+public:
+	UMMC_MaxHealth();
+
+	virtual float CalculateBaseMagnitude_Implementation(const FGameplayEffectSpec& Spec) const override;
+
+private:
+	FGameplayEffectAttributeCaptureDefinition m_VigorDef;
+};
+```
+
+MMC_MaxHealth.cpp
+
+```cpp
+UMMC_MaxHealth::UMMC_MaxHealth()
+{
+	m_VigorDef.AttributeToCapture = UAuraAttributeSet::Getm_VigorAttribute();
+	m_VigorDef.AttributeSource = EGameplayEffectAttributeCaptureSource::Target;
+	m_VigorDef.bSnapshot = false;
+
+	RelevantAttributesToCapture.Add(m_VigorDef);
+}
+
+float UMMC_MaxHealth::CalculateBaseMagnitude_Implementation(const FGameplayEffectSpec& Spec) const
+{
+	/*************************/
+	/** 在这里返回我们的计算值 */
+	/*************************/
+
+	// Gather tags from source and target.（这个我们这里暂时没用，只是示范下获取方法）
+	const FGameplayTagContainer* SourceTags = Spec.CapturedSourceTags.GetAggregatedTags();
+	const FGameplayTagContainer* TargetTags = Spec.CapturedTargetTags.GetAggregatedTags();
+
+	FAggregatorEvaluateParameters EvaluateParameters;
+	EvaluateParameters.SourceTags = SourceTags;
+	EvaluateParameters.TargetTags = TargetTags;
+
+	float Vigor = 0.0f;
+	// 获取我们这个初始化设置的 Vigor Magnitude!!
+	GetCapturedAttributeMagnitude(m_VigorDef, Spec, EvaluateParameters, Vigor);
+	// 确保 Vigor 不会是负值
+	Vigor = FMath::Max(Vigor, 0.0f);
+
+	// 我们希望 m_MaxHealth 不仅取决于活力 Vigor，还取决于角色的等级 Level
+	// 只要这个 GE 有一个 Source Object，我们就可以把它 Cast
+	ICombatInterface* CombatInterface = Cast<ICombatInterface>(Spec.GetContext().GetSourceObject());
+	const int32 PlayerLevel = CombatInterface->GetPlayerLevel();
+	
+	return 80.0f + 2.5f * Vigor + 10.0f * PlayerLevel;
+}
+```
+
+这里要注意我们要修改下 AuraCharacterBase.cpp，**我们需要为初始化时应用的 GE 设置 SourceObject：**
+
+> 当你出问题时，在调试模式下去捕获错误，所以这也是一个很好的练习。
+
+```cpp
+void AAuraCharacterBase::ApplyEffectToSelf(const TSubclassOf<UGameplayEffect>& GameplayEffectClass, const float Level) const
+{
+	check(IsValid(GetAbilitySystemComponent()));
+	check(GameplayEffectClass);
+	FGameplayEffectContextHandle EffectContextHandle = GetAbilitySystemComponent()->MakeEffectContext();
+	EffectContextHandle.AddSourceObject(this);
+	const FGameplayEffectSpecHandle EffectSpecHandl = GetAbilitySystemComponent()->MakeOutgoingSpec(GameplayEffectClass, Level, EffectContextHandle);
+	GetAbilitySystemComponent()->ApplyGameplayEffectSpecToTarget(*EffectSpecHandl.Data.Get(), GetAbilitySystemComponent());
+}
+```
+
+![](./Res/ReadMe_Res2/125.png)
+
+![](./Res/ReadMe_Res2/126.png)
+
+这是一种强大的自定义方法！
+
+> 这里也体现了接口的好处，我们实现了 ICombatInterface，就算是敌人类，只要实现了这个接口我们也能获取他的 Level
+
+<br>
+
+同样，让我们也为 m_MaxMana 做这件事情：
+
+```cpp
+UCLASS()
+class AURA_API UMMC_MaxMana : public UGameplayModMagnitudeCalculation
+{
+	GENERATED_BODY()
+	
+public:
+	UMMC_MaxMana();
+
+	virtual float CalculateBaseMagnitude_Implementation(const FGameplayEffectSpec& Spec) const override;
+
+private:
+	FGameplayEffectAttributeCaptureDefinition m_IntelligenceDef;
+};
+```
+
+```cpp
+UMMC_MaxMana::UMMC_MaxMana()
+{
+	m_IntelligenceDef.AttributeToCapture = UAuraAttributeSet::Getm_IntelligenceAttribute();
+	m_IntelligenceDef.AttributeSource = EGameplayEffectAttributeCaptureSource::Target;
+	m_IntelligenceDef.bSnapshot = false;
+
+	RelevantAttributesToCapture.Add(m_IntelligenceDef);
+}
+
+float UMMC_MaxMana::CalculateBaseMagnitude_Implementation(const FGameplayEffectSpec& Spec) const
+{
+	/*************************/
+	/** 在这里返回我们的计算值 */
+	/*************************/
+
+	// Gather tags from source and target.（这个我们这里暂时没用，只是示范下获取方法）
+	const FGameplayTagContainer* SourceTags = Spec.CapturedSourceTags.GetAggregatedTags();
+	const FGameplayTagContainer* TargetTags = Spec.CapturedTargetTags.GetAggregatedTags();
+
+	FAggregatorEvaluateParameters EvaluateParameters;
+	EvaluateParameters.SourceTags = SourceTags;
+	EvaluateParameters.TargetTags = TargetTags;
+
+	float Intelligence = 0.0f;
+	// 获取我们这个初始化设置的 Intelligence Magnitude!!
+	GetCapturedAttributeMagnitude(m_IntelligenceDef, Spec, EvaluateParameters, Intelligence);
+	// 确保 Intelligence 不会是负值
+	Intelligence = FMath::Max(Intelligence, 0.0f);
+
+	// 我们希望 m_MaxHealth 不仅取决于活力 Intelligence，还取决于角色的等级 Level
+	// 只要这个 GE 有一个 Source Object，我们就可以把它 Cast
+	ICombatInterface* CombatInterface = Cast<ICombatInterface>(Spec.GetContext().GetSourceObject());
+	const int32 PlayerLevel = CombatInterface->GetPlayerLevel();
+	
+	return 50.0f + 2.5f * Intelligence + 15.0f * PlayerLevel;
+}
+```
+
+![](./Res/ReadMe_Res2/127.png)
+
+<br>
+
+## 初始化我们的 Vital（重要）属性
+
+我们用硬编码初始化我们的生命值和法力值，这绝对不是我们喜欢做的事情对吧。
+
+所以我们将不在构造函数中调用 Initm_Health 和 Initm_Mana
+
+![](./Res/ReadMe_Res2/128.png)
+
+让我们把它们删掉，我们的 m_MaxHealth 和 m_MaxMana 取决于其他属性，所以它们可能会跟我们这里硬编码的值有所不同。
+
+AuraAttributeSet.cpp
+
+```cpp
+UAuraAttributeSet::UAuraAttributeSet()
+{
+}
+```
+
+<br>
+
+**我们想把 m_Health 和 m_Mana 设置为 m_MaxHealth 和 m_MaxMana，我们必须在 最大生命值和 最大法力值设置之后再设置 m_Health 和 m_Mana**
+
+所以时机（Timing）很重要！
+
+我想要有 GE 去初始化 m_Health 和 m_Mana，这并不需要一个 Infinite 效果，只需要一个 Instant 效果
+
+开始吧~
+
+AuraCharacterBase.h
+
+```cpp
+protected:
+	// 初始化 Ability Actor Info.
+	virtual void InitAbilityActorInfo();
+
+	// 对角色自身应用 GE
+	void ApplyEffectToSelf(const TSubclassOf<UGameplayEffect>& GameplayEffectClass, float Level) const;
+
+	// 初始化默认属性
+	void InitializeDefaultAttributes() const;
+
+
+	// 该 GE 用来初始化 Primary 属性
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attributes")
+	TSubclassOf<UGameplayEffect> m_DefaultPrimaryAttributesEffect;
+
+	// 该 GE 用来初始化 Secondary 属性
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attributes")
+	TSubclassOf<UGameplayEffect> m_DefaultSecondaryAttributesEffect;
+
+	// 该 GE 用来初始化 Vital 属性
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attributes")
+	TSubclassOf<UGameplayEffect> m_DefaultVitalAttributesEffect;
+```
+
+AuraCharacterBase.cpp
+
+```cpp
+void AAuraCharacterBase::InitializeDefaultAttributes() const
+{
+	// 因为次要属性是根据主要属性驱动的，我们先初始化主要属性
+	ApplyEffectToSelf(m_DefaultPrimaryAttributesEffect, 1.0f);
+	ApplyEffectToSelf(m_DefaultSecondaryAttributesEffect, 1.0f);
+	// 这里有些属性会依赖主要属性，比如我们先设置 m_MaxHealth 和 m_MaxMana 然后再把 m_Health 和 m_Mana 设置跟它们相等
+	ApplyEffectToSelf(m_DefaultVitalAttributesEffect, 1.0f);
+}
+```
+
+![](./Res/ReadMe_Res2/129.png)
+
+![](./Res/ReadMe_Res2/130.png)
+
+最终效果：
+
+![](./Res/ReadMe_Res2/131.png)
+
+## Q&A
+
+![](./Res/ReadMe_Res2/132.png)
+
+![](./Res/ReadMe_Res2/133.png)
+
+![](./Res/ReadMe_Res2/134.png)
+
+<br>
+
+好的，我们已经学习了很多关于不同修改器（Modifer）的知识，还有不同类型的大小计算。我们还知道自定义计算类，不过我们还没有提及 Set by Caller，所以这是我们仍然需要学习的。不用担心，我们后面会涉及到。
+
+> 但是仅仅学习这三个就已经很难了，你只需要知道这三个就可以变得更强大。
+> 这证明了 GAS 是多么有用和强大。
+> 
+> 所以祝贺我们到目前为止所学到的一切，从这里开始它只会变得更好。
 
 <br>
 <br>
