@@ -3807,8 +3807,6 @@ void AAuraCharacterBase::InitializeDefaultAttributes() const
 ## WBP_TextValueRow
 
 
-![](./Res/ReadMe_Res3/142.png)
-
 ![](./Res/ReadMe_Res3/143.png)
 
 ![](./Res/ReadMe_Res3/144.png)
@@ -3927,7 +3925,7 @@ Wrap Box 里面的小部件可以勾选 Fill Empty Space 这个属性，这样�
 
 <br>
 
-## Gameplay Tags Singleton
+## Gameplay Tags Singleton（单例）
 
 ![](./Res/ReadMe_Res3/176.png)
 
@@ -4617,6 +4615,8 @@ UAuraAttributeSet::UAuraAttributeSet()
 }
 ```
 
+<br>
+
 AttributeMenuWidgetController.h
 
 ```cpp
@@ -4708,7 +4708,7 @@ void UAttributeMenuWidgetController::BindCallbacksToDependencies()
 
 <br>
 
-## 优化标签映射到属性的逻辑
+## 优化标签映射到属性的逻辑【重要】
 
 > 上面的做法有一点笨重，我们来优化一下
 
@@ -4808,9 +4808,9 @@ using TStaticFuncPtr = typename TBaseStaticDelegateInstance<T, FDefaultDelegateU
 TMap<FGameplayTag, TStaticFuncPtr<FGameplayAttribute()>> m_TagsToAttributes;
 ```
 
-其他代码不用更改，运行可以看到效果一样，但是 **代码更优雅了**。
+其他相关代码（上面）不用更改，运行可以看到效果一样，但是 **代码更优雅了**。
 
-其他代码也列出来吧哈哈：
+其他相关代码（上面）不用更改也列出来吧哈哈：
 
 ```cpp
 UAuraAttributeSet::UAuraAttributeSet()
@@ -4941,7 +4941,9 @@ void UAttributeMenuWidgetController::BroadcastAttributeInfo(const FGameplayTag& 
 }
 ```
 
-测试
+<br>
+
+**测试：**
 
 ![](./Res/ReadMe_Res3/228.png)
 
@@ -4964,7 +4966,7 @@ void UAttributeMenuWidgetController::BroadcastAttributeInfo(const FGameplayTag& 
 
 下一篇，我们会看到 Gameplay Abilities 和 Ability Tasks 等更多精彩内容！
 
-拼图就快完成了，不是吗 ^ ^
+**拼图就快完成了，不是吗 ^ ^**
 
 <br>
 <br>
