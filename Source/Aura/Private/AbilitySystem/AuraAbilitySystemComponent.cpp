@@ -3,6 +3,8 @@
 
 #include "AbilitySystem/AuraAbilitySystemComponent.h"
 
+#include "AuraGameplayTags.h"
+
 void UAuraAbilitySystemComponent::AbilityActorInfoSet()
 {
 	/** 绑定相关委托 */

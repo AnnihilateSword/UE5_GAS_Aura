@@ -13,6 +13,9 @@
 	GAMEPLAYATTRIBUTE_VALUE_SETTER(PropertyName) \
 	GAMEPLAYATTRIBUTE_VALUE_INITTER(PropertyName)
 
+template<typename T>
+using TStaticFuncPtr = typename TBaseStaticDelegateInstance<T, FDefaultDelegateUserPolicy>::FFuncPtr;
+
 USTRUCT()
 struct FEffectProperties
 {
@@ -73,6 +76,9 @@ protected:
 	virtual void PostGameplayEffectExecute(const struct FGameplayEffectModCallbackData& Data) override;
 
 public:
+	// TMap<FGameplayTag, FGameplayAttribute(*)()> m_TagsToAttributes;  // 一样的效果，不过有点丑陋
+	TMap<FGameplayTag, TStaticFuncPtr<FGameplayAttribute()>> m_TagsToAttributes;
+	
 	/**
 	 * Primary Attributes
 	 */

@@ -45,7 +45,7 @@ public:
 	virtual void BroadcastInitialValues() override;
 
 	/** 为所有依赖 Widget 绑定回调 */
-	virtual void BindCallbacksToDependences() override;
+	virtual void BindCallbacksToDependencies() override;
 
 protected:
 	template<typename T>

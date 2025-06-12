@@ -17,9 +17,9 @@ void UOverlayWidgetController::BroadcastInitialValues()
 	m_OnMaxManaChanged.Broadcast(AuraAttributeSet->Getm_MaxMana());
 }
 
-void UOverlayWidgetController::BindCallbacksToDependences()
+void UOverlayWidgetController::BindCallbacksToDependencies()
 {
-	Super::BindCallbacksToDependences();
+	Super::BindCallbacksToDependencies();
 
 	UAuraAttributeSet* AuraAttributeSet = CastChecked<UAuraAttributeSet>(m_AttributeSet);
 	m_AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(

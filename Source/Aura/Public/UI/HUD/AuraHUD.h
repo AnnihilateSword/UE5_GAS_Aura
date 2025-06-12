@@ -6,6 +6,7 @@
 #include "GameFramework/HUD.h"
 #include "AuraHUD.generated.h"
 
+class UAttributeMenuWidgetController;
 class UAbilitySystemComponent;
 class UAttributeSet;
 class UOverlayWidgetController;
@@ -23,6 +24,7 @@ class AURA_API AAuraHUD : public AHUD
 public:
 	/** 如果有 m_OverlayWidgetController 则返回 m_OverlayWidgetController，如果没有就重新创建一个并存在 m_OverlayWidgetController */
 	UOverlayWidgetController* GetOverlayWidgetController(const FWidgetControllerParams& WCParams);
+	UAttributeMenuWidgetController* GetAttributeMenuWidgetController(const FWidgetControllerParams& WCParams);
 
 	/** 
 	 * 初始化 OverlayWidget
@@ -34,17 +36,23 @@ public:
 	void InitOverlay(APlayerController* PC, APlayerState* PS, UAbilitySystemComponent* ASC, UAttributeSet* AS);
 	
 public:
-	UPROPERTY()
-	TObjectPtr<UAuraUserWidget> m_OverlayWidget;
-
 	// HUD 存储 Overlay Widget 控制器，这类似一个单例，游戏中只有一个
 	UPROPERTY()
 	TObjectPtr<UOverlayWidgetController> m_OverlayWidgetController = nullptr;
 	
 private:
+	UPROPERTY()
+	TObjectPtr<UAuraUserWidget> m_OverlayWidget;
+	
 	UPROPERTY(EditAnywhere)
 	TSubclassOf<UAuraUserWidget> m_OverlayWidgetClass;
 	
 	UPROPERTY(EditAnywhere)
 	TSubclassOf<UOverlayWidgetController> m_OverlayWidgetControllerClass;
+
+	UPROPERTY()
+	TObjectPtr<UAttributeMenuWidgetController> m_AttributeMenuWidgetController;
+
+	UPROPERTY(EditAnywhere)
+	TSubclassOf<UAttributeMenuWidgetController> m_AttributeMenuWidgetControllerClass;
 };

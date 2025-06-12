@@ -3768,4 +3768,1205 @@ void AAuraCharacterBase::InitializeDefaultAttributes() const
 <br>
 <br>
 
+# 第8节：Attribute Menu
+
+我们设计的 UI 中，主要属性（Primary）旁边会有按钮，而次要属性（Secondary）没有。
+
+当我们角色升级时，我们会获得属性点，可以给主要属性升级。**主要属性从某种程度上来说驱动着所有其他属性。** 这就是我想设计的。
+
+我们有一个 Health 和 Mana 在底部那里只是为了显示重要属性（Vital）。
+
+![](./Res/ReadMe_Res3/135.png)
+
+![](./Res/ReadMe_Res3/136.png)
+
+<br>
+
+## WBP_FramedValue
+
+在 Blueprints/UI/AttributeMenu/ 目录下新建 WBP_FramedValue
+
+![](./Res/ReadMe_Res3/137.png)
+
+![](./Res/ReadMe_Res3/138.png)
+
+这里设置成 Border 可以保持边框比例
+
+![](./Res/ReadMe_Res3/139.png)
+
+![](./Res/ReadMe_Res3/140.png)
+
+这几个函数比较简单，就是设置 Image 的 Brush 属性，SizeBox 的宽是 80.0f，高是 45.0f
+
+![](./Res/ReadMe_Res3/141.png)
+
+![](./Res/ReadMe_Res3/142.png)
+
+<br>
+
+## WBP_TextValueRow
+
+
+![](./Res/ReadMe_Res3/142.png)
+
+![](./Res/ReadMe_Res3/143.png)
+
+![](./Res/ReadMe_Res3/144.png)
+
+![](./Res/ReadMe_Res3/145.png)
+
+如果我们有一个基于此的子部件（Widget），我们可以在 Named Slot 中添加新部件（Widget）
+
+![](./Res/ReadMe_Res3/146.png)
+
+<br>
+
+## WBP_TextValueButtonRow
+
+![](./Res/ReadMe_Res3/147.png)
+
+可以注意我们这里有一个 Named Slot，其他小部件（Widget）都被隐藏了
+
+![](./Res/ReadMe_Res3/148.png)
+
+![](./Res/ReadMe_Res3/149.png)
+
+![](./Res/ReadMe_Res3/150.png)
+
+![](./Res/ReadMe_Res3/151.png)
+
+<br>
+
+## WBP_Button
+
+![](./Res/ReadMe_Res3/152.png)
+
+![](./Res/ReadMe_Res3/153.png)
+
+![](./Res/ReadMe_Res3/154.png)
+
+<br>
+
+## WBP_WideButton（继承自 WBP_Button）
+
+![](./Res/ReadMe_Res3/155.png)
+
+![](./Res/ReadMe_Res3/156.png)
+
+![](./Res/ReadMe_Res3/157.png)
+
+![](./Res/ReadMe_Res3/158.png)
+
+添加到 WBP_Overlay 中
+
+![](./Res/ReadMe_Res3/159.png)
+
+<br>
+
+## WBP_AttributeMenu
+
+![](./Res/ReadMe_Res3/160.png)
+
+用我们新创建的按钮替换 WBP_TextValueButtonRow 里面的按钮
+
+![](./Res/ReadMe_Res3/161.png)
+
+UI 按着这个大概搭就行，下面列一些细节部分：
+
+> 基本是硬编码，没啥变量
+
+![](./Res/ReadMe_Res3/162.png)
+
+Image_Background 的 Brush 用的是 MI_FlowingUIBG，然后这里我调了 Tint 的 HSV为（0, 0, 0.39f）
+
+![](./Res/ReadMe_Res3/163.png)
+
+Wrap Box 里面的小部件可以勾选 Fill Empty Space 这个属性，这样就可以居中
+
+![](./Res/ReadMe_Res3/164.png)
+
+![](./Res/ReadMe_Res3/165.png)
+
+![](./Res/ReadMe_Res3/166.png)
+
+![](./Res/ReadMe_Res3/167.png)
+
+![](./Res/ReadMe_Res3/168.png)
+
+<br>
+
+## 打开和关闭属性菜单UI
+
+![](./Res/ReadMe_Res3/169.png)
+
+![](./Res/ReadMe_Res3/170.png)
+
+![](./Res/ReadMe_Res3/171.png)
+
+<br>
+
+## 计划显示我们的属性数据
+
+我们需要为属性菜单也创建一个 WidgetController
+
+想想，我们要为我们的每一个属性都绑定一个委托吗？这样做也挺高效，但是缺少可扩展性，比如仅仅添加一个新属性就会导致更改相当多的代码。
+
+相反，我们可以广播一个通用的委托，可能这个委托可以广播一个属性改变的列表，换句话说，我们可以发送多条信息。我们甚至可以将它打包成一个漂亮的、整洁的小结构体，所以这是一个很好的方法。
+
+![](./Res/ReadMe_Res3/172.png)
+
+![](./Res/ReadMe_Res3/173.png)
+
+![](./Res/ReadMe_Res3/174.png)
+
+> 不过这里 RequestGameplayTag 输入的参数需要注意，很容易打错字，是否可以考虑构建一个系统或者类来存放这些字段？
+
+![](./Res/ReadMe_Res3/175.png)
+
+接下来让我们构建这个强大且优雅的系统。
+
+<br>
+
+## Gameplay Tags Singleton
+
+![](./Res/ReadMe_Res3/176.png)
+
+![](./Res/ReadMe_Res3/177.png)
+
+AuraGameplayTags.h
+
+```cpp
+// Copyright AnnihilateSword.
+
+#pragma once
+
+#include "CoreMinimal.h"
+
+/**
+ * AuraGameplayTags
+ *
+ * Singleton containing native Gameplay Tags
+ */
+struct FAuraGameplayTags
+{
+public:
+	static const FAuraGameplayTags& Get() { return GameplayTags; }
+	static void InitializeNativeGameplayTags();
+
+protected:
+
+private:
+	static FAuraGameplayTags GameplayTags;
+};
+
+```
+
+AuraGameplayTags.cpp
+
+```cpp
+// Copyright AnnihilateSword.
+
+
+#include "AuraGameplayTags.h"
+#include "GameplayTagsManager.h"
+
+FAuraGameplayTags FAuraGameplayTags::GameplayTags;
+
+void FAuraGameplayTags::InitializeNativeGameplayTags()
+{
+	UGameplayTagsManager::Get().AddNativeGameplayTag(FName("Attributes.Secondary.Armor"), FString("Reduces damage taken, improves Block Chance."));
+}
+
+```
+
+有个宏，可以了解下：**UE_DEFINE_GAMEPLAY_TAG_COMMENT**
+
+![](./Res/ReadMe_Res3/178.png)
+
+<br>
+
+## Aura Asset Manager【自定义 AssetManager】
+
+AuraAssetManager 也是一个单例类
+
+![](./Res/ReadMe_Res3/179.png)
+
+![](./Res/ReadMe_Res3/180.png)
+
+AuraAssetManager.h
+
+```cpp
+UCLASS()
+class AURA_API UAuraAssetManager : public UAssetManager
+{
+	GENERATED_BODY()
+
+public:
+	static UAuraAssetManager& Get();
+
+protected:
+	virtual void StartInitialLoading() override;
+	
+};
+```
+
+AuraAssetManager.cpp
+
+```cpp
+#include "AuraAssetManager.h"
+#include "AuraGameplayTags.h"
+
+UAuraAssetManager& UAuraAssetManager::Get()
+{
+	check(GEngine);
+
+	UAuraAssetManager* AuraAssetManager = Cast<UAuraAssetManager>(GEngine->AssetManager);
+	return *AuraAssetManager;
+}
+
+void UAuraAssetManager::StartInitialLoading()
+{
+	Super::StartInitialLoading();
+
+	// 这里是我们调用 FAuraGameplayTags::InitializeNativeGameplayTags 的最佳位置
+	FAuraGameplayTags::InitializeNativeGameplayTags();
+}
+```
+
+**为项目设置 AssetManager 类：**
+
+![](./Res/ReadMe_Res3/181.png)
+
+需要重新编译一下。重新打开编辑器，可以看到我们以代码的形式添加成功了我们的 GameplayTag
+
+![](./Res/ReadMe_Res3/182.png)
+
+也可以在编辑器中直接设置，它会保存在 .ini 中，更不容易出错。
+
+![](./Res/ReadMe_Res3/183.png)
+
+<br>
+
+那我们如何访问这些游戏标签呢，用 GameplayTags.Attributes_Secondary_Armor 把我们在 C++ 中动态创建的 Tag 保存起来
+
+```cpp
+struct FAuraGameplayTags
+{
+public:
+	static const FAuraGameplayTags& Get() { return GameplayTags; }
+	static void InitializeNativeGameplayTags();
+
+	FGameplayTag Attributes_Secondary_Armor;
+
+protected:
+
+private:
+	static FAuraGameplayTags GameplayTags;
+};
+
+void FAuraGameplayTags::InitializeNativeGameplayTags()
+{
+	GameplayTags.Attributes_Secondary_Armor = UGameplayTagsManager::Get().AddNativeGameplayTag(FName("Attributes.Secondary.Armor"), FString("Reduces damage taken, improves Block Chance."));
+}
+```
+
+可以在 AuraAbilitySystemComponent.cpp 初始化时调试一下
+
+```cpp
+void UAuraAbilitySystemComponent::AbilityActorInfoSet()
+{
+	/** 绑定相关委托 */
+	OnGameplayEffectAppliedDelegateToSelf.AddUObject(this, &UAuraAbilitySystemComponent::EffectApplied);
+
+	const FAuraGameplayTags& GameplayTags = FAuraGameplayTags::Get();
+	// GameplayTags.Attributes_Secondary_Armor.ToString()
+	GEngine->AddOnScreenDebugMessage(-1, 10.0f, FColor::Orange, FString::Printf(TEXT("Tag: %s"), *GameplayTags.Attributes_Secondary_Armor.ToString()));
+}
+```
+
+![](./Res/ReadMe_Res3/184.png)
+
+现在我们可以添加本地游戏标签，我想添加我们所有的属性标签在这里的 Aura gameplay Tags，然后我们可以访问这些标签，并在 C++中使用它们。
+
+<br>
+
+## C++ 动态生成 Native Gameplay Tags
+
+先将 Primary Tags 和 MaxHealth，MaxMana 标签删除
+
+![](./Res/ReadMe_Res3/185.png)
+
+![](./Res/ReadMe_Res3/186.png)
+
+![](./Res/ReadMe_Res3/187.png)
+
+删除后，在配置文件里面也能看见，这是它们实际存储的地方，我们可以看到这种变化
+
+![](./Res/ReadMe_Res3/188.png)
+
+现在在我们的 C++ 代码中创建我们所有的标签（Tags）
+
+AuraGameplayTags.h
+
+```cpp
+// Copyright AnnihilateSword.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
+
+/**
+ * AuraGameplayTags
+ *
+ * Singleton containing native Gameplay Tags
+ */
+struct FAuraGameplayTags
+{
+public:
+	static const FAuraGameplayTags& Get() { return GameplayTags; }
+	static void InitializeNativeGameplayTags();
+
+	FGameplayTag Attributes_Primary_Strength;
+	FGameplayTag Attributes_Primary_Intelligence;
+	FGameplayTag Attributes_Primary_Resilience;
+	FGameplayTag Attributes_Primary_Vigor;
+
+	FGameplayTag Attributes_Secondary_Armor;
+	FGameplayTag Attributes_Secondary_ArmorPenetration;
+	FGameplayTag Attributes_Secondary_BlockChance;
+	FGameplayTag Attributes_Secondary_CriticalHitChance;
+	FGameplayTag Attributes_Secondary_CriticalHitDamage;
+	FGameplayTag Attributes_Secondary_CriticalHitResistance;
+	FGameplayTag Attributes_Secondary_HealthRegeneration;
+	FGameplayTag Attributes_Secondary_ManaRegeneration;
+	FGameplayTag Attributes_Secondary_MaxHealth;
+	FGameplayTag Attributes_Secondary_MaxMana;
+
+protected:
+
+private:
+	static FAuraGameplayTags GameplayTags;
+};
+
+```
+
+AuraGameplayTags.cpp
+
+```cpp
+// Copyright AnnihilateSword.
+
+
+#include "AuraGameplayTags.h"
+#include "GameplayTagsManager.h"
+
+FAuraGameplayTags FAuraGameplayTags::GameplayTags;
+
+void FAuraGameplayTags::InitializeNativeGameplayTags()
+{
+	/*Add commentMore actions
+	 * Primary Attributes
+	 */
+	GameplayTags.Attributes_Primary_Strength = UGameplayTagsManager::Get().AddNativeGameplayTag(
+		FName("Attributes.Primary.Strength"),
+		FString("Increases physical damage")
+		);
+
+	GameplayTags.Attributes_Primary_Intelligence = UGameplayTagsManager::Get().AddNativeGameplayTag(
+		FName("Attributes.Primary.Intelligence"),
+		FString("Increases magical damage")
+		);
+
+	GameplayTags.Attributes_Primary_Resilience = UGameplayTagsManager::Get().AddNativeGameplayTag(
+		FName("Attributes.Primary.Resilience"),
+		FString("Increases Armor and Armor Penetration")
+		);
+
+	GameplayTags.Attributes_Primary_Vigor = UGameplayTagsManager::Get().AddNativeGameplayTag(
+		FName("Attributes.Primary.Vigor"),
+		FString("Increases Health")
+		);
+
+	/*
+	 * Secondary Attributes
+	 */
+	GameplayTags.Attributes_Secondary_Armor = UGameplayTagsManager::Get().AddNativeGameplayTag(
+		FName("Attributes.Secondary.Armor"),
+		FString("Reduces damage taken, improves Block Chance")
+		);
+
+	GameplayTags.Attributes_Secondary_ArmorPenetration = UGameplayTagsManager::Get().AddNativeGameplayTag(
+		FName("Attributes.Secondary.ArmorPenetration"),
+		FString("Ignores Percentage of enemy Armor, increases Critical Hit Chance")
+		);
+
+	GameplayTags.Attributes_Secondary_BlockChance = UGameplayTagsManager::Get().AddNativeGameplayTag(
+		FName("Attributes.Secondary.BlockChance"),
+		FString("Chance to cut incoming damage in half")
+		);
+
+	GameplayTags.Attributes_Secondary_CriticalHitChance = UGameplayTagsManager::Get().AddNativeGameplayTag(
+		FName("Attributes.Secondary.CriticalHitChance"),
+		FString("Chance to double damage plus critical hit bonus")
+		);
+
+	GameplayTags.Attributes_Secondary_CriticalHitDamage = UGameplayTagsManager::Get().AddNativeGameplayTag(
+		FName("Attributes.Secondary.CriticalHitDamage"),
+		FString("Bonus damage added when a critical hit is scored")
+		);
+
+	GameplayTags.Attributes_Secondary_CriticalHitResistance = UGameplayTagsManager::Get().AddNativeGameplayTag(
+		FName("Attributes.Secondary.CriticalHitResistance"),
+		FString("Reduces Critical Hit Chance of attacking enemies")
+		);
+
+	GameplayTags.Attributes_Secondary_HealthRegeneration = UGameplayTagsManager::Get().AddNativeGameplayTag(
+		FName("Attributes.Secondary.HealthRegeneration"),
+		FString("Amount of Health regenerated every 1 second")
+		);
+
+	GameplayTags.Attributes_Secondary_ManaRegeneration = UGameplayTagsManager::Get().AddNativeGameplayTag(
+		FName("Attributes.Secondary.ManaRegeneration"),
+		FString("Amount of Mana regenerated every 1 second")
+		);
+
+	GameplayTags.Attributes_Secondary_MaxHealth = UGameplayTagsManager::Get().AddNativeGameplayTag(
+		FName("Attributes.Secondary.MaxHealth"),
+		FString("Maximum amount of Health obtainable")
+		);
+
+	GameplayTags.Attributes_Secondary_MaxMana = UGameplayTagsManager::Get().AddNativeGameplayTag(
+		FName("Attributes.Secondary.MaxMana"),
+		FString("Maximum amount of Mana obtainable")
+		);
+}
+
+```
+
+AuraAbilitySystemComponent.cpp 里面的测试可以删除了
+
+```cpp
+void UAuraAbilitySystemComponent::AbilityActorInfoSet()
+{
+	/** 绑定相关委托 */
+	OnGameplayEffectAppliedDelegateToSelf.AddUObject(this, &UAuraAbilitySystemComponent::EffectApplied);
+}
+```
+
+> 和制作 DataTable 一样，这种做法我们要小心写错别字
+
+![](./Res/ReadMe_Res3/189.png)
+
+这些在蓝图中也是可用的
+
+![](./Res/ReadMe_Res3/190.png)
+
+<br>
+
+## 【Attribute Info】 DataAsset
+
+![](./Res/ReadMe_Res3/191.png)
+
+我们想要创建一个结构体来存储与给定属性相关的所有信息。因此，一旦属性发生更改，我们就可以将此结构对象广播到小部件蓝图。
+
+现在，如果您以前从未使用过数据资产，我认为您会非常喜欢它们，因为它们让我们有机会将资产信息存储在一个漂亮的蓝图可设置类中。
+
+![](./Res/ReadMe_Res3/192.png)
+
+![](./Res/ReadMe_Res3/193.png)
+
+AuraAttributeInfo.h
+
+```cpp
+// Copyright AnnihilateSword.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Engine/DataAsset.h"
+#include "GameplayTagContainer.h"
+#include "AttributeInfo.generated.h"
+
+
+USTRUCT(BlueprintType)
+struct FAuraAttributeInfo
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	FGameplayTag AttributeTag = FGameplayTag();
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	FText AttributeName = FText();
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	FText AttributeDescription = FText();
+
+	UPROPERTY(BlueprintReadOnly)
+	float AttributeValue = 0.f;
+};
+
+/**
+ * 
+ */
+UCLASS()
+class AURA_API UAttributeInfo : public UDataAsset
+{
+	GENERATED_BODY()
+	
+public:
+	FAuraAttributeInfo FindAttributeInfoForTag(const FGameplayTag& AttributeTag, bool bLogNotFound = false) const;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	TArray<FAuraAttributeInfo> AttributeInformation;
+};
+
+```
+
+AuraAttributeInfo.cpp
+
+```cpp
+// Copyright AnnihilateSword.
+
+
+#include "Data/AttributeInfo.h"
+
+FAuraAttributeInfo UAttributeInfo::FindAttributeInfoForTag(const FGameplayTag& AttributeTag, bool bLogNotFound) const
+{
+	for (const FAuraAttributeInfo& Info : AttributeInformation)
+	{
+		if (Info.AttributeTag.MatchesTagExact(AttributeTag))
+		{
+			return Info;
+		}
+	}
+
+	if (bLogNotFound)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Can't find Info for AttributeTag [%s] on AttributeInfo [%s]."), *AttributeTag.ToString(),*GetNameSafe(this));
+	}
+
+	return FAuraAttributeInfo();
+}
+
+```
+
+![](./Res/ReadMe_Res3/194.png)
+
+![](./Res/ReadMe_Res3/195.png)
+
+把我们的主要属性和次要属性全部填到表里，可以考虑做一个工具，将他们自动化：
+
+![](./Res/ReadMe_Res3/196.png)
+
+接下来：
+
+![](./Res/ReadMe_Res3/197.png)
+
+<br>
+
+## Attribute Menu Widget Controller
+
+![](./Res/ReadMe_Res3/198.png)
+
+![](./Res/ReadMe_Res3/199.png)
+
+AttributeMenuWidgetController.h
+
+```cpp
+// Copyright AnnihilateSword.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "UI/WidgetController/AuraWidgetController.h"
+#include "AttributeMenuWidgetController.generated.h"
+
+/**
+ * 
+ */
+UCLASS()
+class AURA_API UAttributeMenuWidgetController : public UAuraWidgetController
+{
+	GENERATED_BODY()
+	
+public:
+	virtual void BroadcastInitialValues() override;
+	virtual void BindCallbacksToDependences() override;
+};
+```
+
+AttributeMenuWidgetController.cpp
+
+```cpp
+// Copyright AnnihilateSword.
+
+
+#include "UI/WidgetController/AttributeMenuWidgetController.h"
+
+void UAttributeMenuWidgetController::BroadcastInitialValues()
+{
+}
+
+void UAttributeMenuWidgetController::BindCallbacksToDependences()
+{
+}
+```
+
+<br>
+
+## 创建 AuraAbilitySystemLibrary 蓝图库函数
+
+**创建蓝图库函数，更方便的获取我们的 AttributeMenuWidgetController**
+
+![](./Res/ReadMe_Res3/200.png)
+
+![](./Res/ReadMe_Res3/201.png)
+
+AuraHUD.h
+
+```cpp
+UCLASS()
+class AURA_API AAuraHUD : public AHUD
+{
+	GENERATED_BODY()
+
+public:
+	/** 如果有 m_OverlayWidgetController 则返回 m_OverlayWidgetController，如果没有就重新创建一个并存在 m_OverlayWidgetController */
+	UOverlayWidgetController* GetOverlayWidgetController(const FWidgetControllerParams& WCParams);
+	UAttributeMenuWidgetController* GetAttributeMenuWidgetController(const FWidgetControllerParams& WCParams);
+
+	/** 
+	 * 初始化 OverlayWidget
+	 * 没有放在 BeginPlay 中是因为，在 BeginPlay 可能有些值未初始化
+	 * 决定放在哪里调用 InitOverlay：我们什么时候知道它们都已经用有效数据初始化了？
+	 * 
+	 * 一个很好的地方是在 AAuraCharacter::InitAbilityActorInfo()，所以我们会在这里调用该函数
+	 */
+	void InitOverlay(APlayerController* PC, APlayerState* PS, UAbilitySystemComponent* ASC, UAttributeSet* AS);
+	
+public:
+	// HUD 存储 Overlay Widget 控制器，这类似一个单例，游戏中只有一个
+	UPROPERTY()
+	TObjectPtr<UOverlayWidgetController> m_OverlayWidgetController = nullptr;
+	
+private:
+	UPROPERTY()
+	TObjectPtr<UAuraUserWidget> m_OverlayWidget;
+	
+	UPROPERTY(EditAnywhere)
+	TSubclassOf<UAuraUserWidget> m_OverlayWidgetClass;
+	
+	UPROPERTY(EditAnywhere)
+	TSubclassOf<UOverlayWidgetController> m_OverlayWidgetControllerClass;
+
+	UPROPERTY()
+	TObjectPtr<UAttributeMenuWidgetController> m_AttributeMenuWidgetController;
+
+	UPROPERTY(EditAnywhere)
+	TSubclassOf<UAttributeMenuWidgetController> m_AttributeMenuWidgetControllerClass;
+};
+```
+
+AuraHUD.cpp
+
+```cpp
+UOverlayWidgetController* AAuraHUD::GetOverlayWidgetController(const FWidgetControllerParams& WCParams)
+{
+	if (m_OverlayWidgetController == nullptr)
+	{
+		m_OverlayWidgetController = NewObject<UOverlayWidgetController>(this, m_OverlayWidgetControllerClass);
+		m_OverlayWidgetController->SetWidgetControllerParams(WCParams);
+
+		// 2. 为所有依赖 Widget 绑定回调
+		m_OverlayWidgetController->BindCallbacksToDependencies();
+	}
+	return m_OverlayWidgetController;
+}
+
+UAttributeMenuWidgetController* AAuraHUD::GetAttributeMenuWidgetController(const FWidgetControllerParams& WCParams)
+{
+	if (m_AttributeMenuWidgetController == nullptr)
+	{
+		m_AttributeMenuWidgetController = NewObject<UAttributeMenuWidgetController>(this, m_AttributeMenuWidgetControllerClass);
+		m_AttributeMenuWidgetController->SetWidgetControllerParams(WCParams);
+		m_AttributeMenuWidgetController->BindCallbacksToDependencies();
+	}
+	return m_AttributeMenuWidgetController;
+}
+```
+
+<br>
+<br>
+
+AuraAbilitySystemLibrary.h
+
+```cpp
+UCLASS()
+class AURA_API UAuraAbilitySystemLibrary : public UBlueprintFunctionLibrary
+{
+	GENERATED_BODY()
+
+public:
+	UFUNCTION(BlueprintPure, Category = "AuraAbilitySystemLibrary|WidgetController")
+	static UOverlayWidgetController* GetOverlayWidgetController(const UObject* WorldContextObject);
+
+	UFUNCTION(BlueprintPure, Category="AuraAbilitySystemLibrary|WidgetController")
+	static UAttributeMenuWidgetController* GetAttributeMenuWidgetController(const UObject* WorldContextObject);
+};
+
+```
+
+AuraAbilitySystemLibrary.cpp
+
+```cpp
+UOverlayWidgetController* UAuraAbilitySystemLibrary::GetOverlayWidgetController(const UObject* WorldContextObject)
+{
+	if (APlayerController* PC = UGameplayStatics::GetPlayerController(WorldContextObject, 0))
+	{
+		if (AAuraHUD* AuraHUD = Cast<AAuraHUD>(PC->GetHUD()))
+		{
+			AAuraPlayerState* PS = PC->GetPlayerState<AAuraPlayerState>();
+			UAbilitySystemComponent* ASC = PS->GetAbilitySystemComponent();
+			UAttributeSet* AS = PS->GetAttributeSet();
+			const FWidgetControllerParams WidgetControllerParams(PC, PS, ASC, AS);
+			return AuraHUD->GetOverlayWidgetController(WidgetControllerParams);
+		}
+	}
+	return nullptr;
+}
+
+UAttributeMenuWidgetController* UAuraAbilitySystemLibrary::GetAttributeMenuWidgetController(
+	const UObject* WorldContextObject)
+{
+	if (APlayerController* PC = UGameplayStatics::GetPlayerController(WorldContextObject, 0))
+	{
+		if (AAuraHUD* AuraHUD = Cast<AAuraHUD>(PC->GetHUD()))
+		{
+			AAuraPlayerState* PS = PC->GetPlayerState<AAuraPlayerState>();
+			UAbilitySystemComponent* ASC = PS->GetAbilitySystemComponent();
+			UAttributeSet* AS = PS->GetAttributeSet();
+			const FWidgetControllerParams WidgetControllerParams(PC, PS, ASC, AS);
+			return AuraHUD->GetAttributeMenuWidgetController(WidgetControllerParams);
+		}
+	}
+	return nullptr;
+}
+```
+
+![](./Res/ReadMe_Res3/202.png)
+
+![](./Res/ReadMe_Res3/203.png)
+
+![](./Res/ReadMe_Res3/204.png)
+
+![](./Res/ReadMe_Res3/205.png)
+
+<br>
+
+## Attribute Info Delegate
+
+![](./Res/ReadMe_Res3/206.png)
+
+AuraAttributeSet.h
+
+添加 FGameplayAttribute
+
+```cpp
+#define ATTRIBUTE_ACCESSORS(ClassName, PropertyName) \
+	GAMEPLAYATTRIBUTE_PROPERTY_GETTER(ClassName, PropertyName) \
+	GAMEPLAYATTRIBUTE_VALUE_GETTER(PropertyName) \
+	GAMEPLAYATTRIBUTE_VALUE_SETTER(PropertyName) \
+	GAMEPLAYATTRIBUTE_VALUE_INITTER(PropertyName)
+
+DECLARE_DELEGATE_RetVal(FGameplayAttribute, FAttributeSignature);
+```
+
+```cpp
+public:
+	TMap<FGameplayTag, FAttributeSignature> m_TagsToAttributes;
+	
+	/**
+	 * Primary Attributes
+	 */
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Strength, Category = "Primary Attributes")
+	FGameplayAttributeData m_Strength;
+	ATTRIBUTE_ACCESSORS(UAuraAttributeSet, m_Strength);
+```
+
+AuraAttributeSet.cpp
+
+```cpp
+UAuraAttributeSet::UAuraAttributeSet()
+{
+	const FAuraGameplayTags& AuraGameplayTags = FAuraGameplayTags::Get();
+	
+	FAttributeSignature StrengthDelegate;
+	FAttributeSignature IntelligenceDelegate;
+	FAttributeSignature ResilienceDelegate;
+	FAttributeSignature VigorDelegate;
+	// 因为 GetxxxAttribute 这些函数是静态的，所以我们用 BindStatic 绑定
+	StrengthDelegate.BindStatic(Getm_StrengthAttribute);
+	IntelligenceDelegate.BindStatic(Getm_IntelligenceAttribute);
+	ResilienceDelegate.BindStatic(Getm_ResilienceAttribute);
+	VigorDelegate.BindStatic(Getm_VigorAttribute);
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Primary_Strength, StrengthDelegate);
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Primary_Intelligence, IntelligenceDelegate);
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Primary_Resilience, ResilienceDelegate);
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Primary_Vigor, VigorDelegate);
+}
+```
+
+AttributeMenuWidgetController.h
+
+```cpp
+class UAttributeInfo;
+struct FAuraAttributeInfo;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAttributeInfoSignature, const FAuraAttributeInfo&, Info);
+
+/**
+ * 
+ */
+UCLASS()
+class AURA_API UAttributeMenuWidgetController : public UAuraWidgetController
+{
+	GENERATED_BODY()
+	
+public:
+	virtual void BroadcastInitialValues() override;
+	virtual void BindCallbacksToDependencies() override;
+
+	UPROPERTY(BlueprintAssignable, Category = "GAS|Attributes")
+	FAttributeInfoSignature m_AttributeInfoDelegate;
+	
+protected:
+	UPROPERTY(EditDefaultsOnly)
+	TObjectPtr<UAttributeInfo> m_AttributeInfo;
+};
+```
+
+AttributeMenuWidgetController.cpp
+
+```cpp
+// Copyright AnnihilateSword.
+
+
+#include "UI/WidgetController/AttributeMenuWidgetController.h"
+
+#include "AbilitySystem/AuraAttributeSet.h"
+#include "Data/AttributeInfo.h"
+
+void UAttributeMenuWidgetController::BroadcastInitialValues()
+{
+	UAuraAttributeSet* AS = CastChecked<UAuraAttributeSet>(m_AttributeSet);
+
+	check(m_AttributeInfo);
+
+	for (auto& Pair : AS->m_TagsToAttributes)
+	{
+		FAuraAttributeInfo Info = m_AttributeInfo->FindAttributeInfoForTag(Pair.Key);
+		Info.AttributeValue = Pair.Value.Execute().GetNumericValue(AS);
+		m_AttributeInfoDelegate.Broadcast(Info);
+	}
+}
+
+void UAttributeMenuWidgetController::BindCallbacksToDependencies()
+{
+}
+```
+
+![](./Res/ReadMe_Res3/207.png)
+
+![](./Res/ReadMe_Res3/208.png)
+
+![](./Res/ReadMe_Res3/209.png)
+
+![](./Res/ReadMe_Res3/210.png)
+
+![](./Res/ReadMe_Res3/211.png)
+
+![](./Res/ReadMe_Res3/212.png)
+
+![](./Res/ReadMe_Res3/213.png)
+
+![](./Res/ReadMe_Res3/214.png)
+
+![](./Res/ReadMe_Res3/215.png)
+
+![](./Res/ReadMe_Res3/216.png)
+
+我们把 WBP_TextValueButtonRow 构造函数的逻辑移到父类里面去
+
+![](./Res/ReadMe_Res3/217.png)
+
+![](./Res/ReadMe_Res3/218.png)
+
+最终效果：
+
+![](./Res/ReadMe_Res3/219.png)
+
+<br>
+
+## 优化标签映射到属性的逻辑
+
+> 上面的做法有一点笨重，我们来优化一下
+
+FAttributeSignature 只是存储静态函数指针
+
+```cpp
+TMap<FGameplayTag, FAttributeSignature> m_TagsToAttributes;
+```
+
+![](./Res/ReadMe_Res3/220.png)
+
+查看这个模板类的做法
+
+![](./Res/ReadMe_Res3/221.png)
+
+![](./Res/ReadMe_Res3/222.png)
+
+所以我们能不能这样做呢？直接在 TMap 中存储函数指针，而不用在构造函数中手动绑定那么多
+
+![](./Res/ReadMe_Res3/223.png)
+
+下面我们就来修改：
+
+AuraAttributeSet.h
+
+```cpp
+public:
+	TMap<FGameplayTag, TBaseStaticDelegateInstance<FGameplayAttribute(), FDefaultDelegateUserPolicy>::FFuncPtr> m_TagsToAttributes;
+```
+
+AuraAttributeSet.cpp
+
+```cpp
+UAuraAttributeSet::UAuraAttributeSet()
+{
+	const FAuraGameplayTags& AuraGameplayTags = FAuraGameplayTags::Get();
+
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Primary_Strength, Getm_StrengthAttribute);
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Primary_Intelligence, Getm_IntelligenceAttribute);
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Primary_Resilience, Getm_ResilienceAttribute);
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Primary_Vigor, Getm_VigorAttribute);
+}
+```
+
+AttributeMenuWidgetController.cpp
+
+```cpp
+void UAttributeMenuWidgetController::BroadcastInitialValues()
+{
+	UAuraAttributeSet* AS = CastChecked<UAuraAttributeSet>(m_AttributeSet);
+
+	check(m_AttributeInfo);
+
+	for (auto& Pair : AS->m_TagsToAttributes)
+	{
+		FAuraAttributeInfo Info = m_AttributeInfo->FindAttributeInfoForTag(Pair.Key);
+		Info.AttributeValue = Pair.Value().GetNumericValue(AS);
+		m_AttributeInfoDelegate.Broadcast(Info);
+	}
+}
+```
+
+这样可以得到一样的效果
+
+如果你使用 Rider 可以发现一件有趣的事情；
+
+![](./Res/ReadMe_Res3/224.png)
+
+![](./Res/ReadMe_Res3/225.png)
+
+其实用这个也可以
+
+```cpp
+public:
+	TMap<FGameplayTag, FGameplayAttribute(*)()> m_TagsToAttributes;
+```
+
+不过，我们不太喜欢看到函数指针语法，我们通常将它藏起来，有很多方法可以做到这一点，比如别名。
+
+```cpp
+typedef TBaseStaticDelegateInstance<FGameplayAttribute(), FDefaultDelegateUserPolicy>::FFuncPtr FAttributFunPtr;
+```
+
+<br>
+<br>
+
+**更通用的做法，也是我们最终使用的做法：**
+
+AuraAttributeSet.h
+
+```cpp
+template<typename T>
+using TStaticFuncPtr = typename TBaseStaticDelegateInstance<T, FDefaultDelegateUserPolicy>::FFuncPtr;
+```
+
+```cpp
+TMap<FGameplayTag, TStaticFuncPtr<FGameplayAttribute()>> m_TagsToAttributes;
+```
+
+其他代码不用更改，运行可以看到效果一样，但是 **代码更优雅了**。
+
+其他代码也列出来吧哈哈：
+
+```cpp
+UAuraAttributeSet::UAuraAttributeSet()
+{
+	const FAuraGameplayTags& AuraGameplayTags = FAuraGameplayTags::Get();
+
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Primary_Strength, Getm_StrengthAttribute);
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Primary_Intelligence, Getm_IntelligenceAttribute);
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Primary_Resilience, Getm_ResilienceAttribute);
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Primary_Vigor, Getm_VigorAttribute);
+}
+```
+
+```cpp
+void UAttributeMenuWidgetController::BroadcastInitialValues()
+{
+	UAuraAttributeSet* AS = CastChecked<UAuraAttributeSet>(m_AttributeSet);
+
+	check(m_AttributeInfo);
+
+	for (auto& Pair : AS->m_TagsToAttributes)
+	{
+		FAuraAttributeInfo Info = m_AttributeInfo->FindAttributeInfoForTag(Pair.Key);
+		Info.AttributeValue = Pair.Value().GetNumericValue(AS);
+		m_AttributeInfoDelegate.Broadcast(Info);
+	}
+}
+```
+
+![](./Res/ReadMe_Res3/226.png)
+
+![](./Res/ReadMe_Res3/227.png)
+
+<br>
+
+## Responding to Attribute Changes
+
+响应我们的属性更改，以及把我们的 Secondary Attributes 也做好绑定
+
+AuraAttributeSet.cpp
+
+```cpp
+UAuraAttributeSet::UAuraAttributeSet()
+{
+	const FAuraGameplayTags& AuraGameplayTags = FAuraGameplayTags::Get();
+
+	/* Primary Attributes */
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Primary_Strength, Getm_StrengthAttribute);
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Primary_Intelligence, Getm_IntelligenceAttribute);
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Primary_Resilience, Getm_ResilienceAttribute);
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Primary_Vigor, Getm_VigorAttribute);
+
+	/* Secondary Attributes */
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Secondary_Armor, Getm_ArmorAttribute);
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Secondary_ArmorPenetration, Getm_ArmorPenetrationAttribute);
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Secondary_BlockChance, Getm_BlockChanceAttribute);	
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Secondary_CriticalHitChance, Getm_CriticalHitChanceAttribute);
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Secondary_CriticalHitResistance, Getm_CriticalHitResistanceAttribute);
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Secondary_CriticalHitDamage, Getm_CriticalHitDamageAttribute);
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Secondary_HealthRegeneration, Getm_HealthRegenerationAttribute);
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Secondary_ManaRegeneration, Getm_ManaRegenerationAttribute);
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Secondary_MaxHealth, Getm_MaxHealthAttribute);
+	m_TagsToAttributes.Add(AuraGameplayTags.Attributes_Secondary_MaxMana, Getm_MaxManaAttribute);
+}
+```
+
+添加 BroadcastAttributeInfo 函数
+
+AttributeMenuWidgetController.h
+
+```cpp
+class AURA_API UAttributeMenuWidgetController : public UAuraWidgetController
+{
+	GENERATED_BODY()
+	
+public:
+	virtual void BroadcastInitialValues() override;
+	virtual void BindCallbacksToDependencies() override;
+
+	UPROPERTY(BlueprintAssignable, Category = "GAS|Attributes")
+	FAttributeInfoSignature m_AttributeInfoDelegate;
+	
+protected:
+	UPROPERTY(EditDefaultsOnly)
+	TObjectPtr<UAttributeInfo> m_AttributeInfo;
+
+private:
+	/** 广播指定属性标签的属性信息 */
+	void BroadcastAttributeInfo(const FGameplayTag& AttributeTag, const FGameplayAttribute& Attribute) const;
+};
+```
+
+AttributeMenuWidgetController.cpp
+
+```cpp
+void UAttributeMenuWidgetController::BroadcastInitialValues()
+{
+	UAuraAttributeSet* AS = CastChecked<UAuraAttributeSet>(m_AttributeSet);
+
+	check(m_AttributeInfo);
+
+	for (auto& Pair : AS->m_TagsToAttributes)
+	{
+		BroadcastAttributeInfo(Pair.Key, Pair.Value());
+	}
+}
+
+void UAttributeMenuWidgetController::BindCallbacksToDependencies()
+{
+	UAuraAttributeSet* AS = CastChecked<UAuraAttributeSet>(m_AttributeSet);
+	check(m_AttributeInfo);
+	for (auto& Pair : AS->m_TagsToAttributes)
+	{
+		m_AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(Pair.Value()).AddLambda(
+			[this, Pair](const FOnAttributeChangeData& Data)
+			{
+				BroadcastAttributeInfo(Pair.Key, Pair.Value());
+			}
+		);
+	}
+}
+
+void UAttributeMenuWidgetController::BroadcastAttributeInfo(const FGameplayTag& AttributeTag, const FGameplayAttribute& Attribute) const
+{
+	FAuraAttributeInfo Info = m_AttributeInfo->FindAttributeInfoForTag(AttributeTag);
+	Info.AttributeValue = Attribute.GetNumericValue(m_AttributeSet);
+	m_AttributeInfoDelegate.Broadcast(Info);
+}
+```
+
+测试
+
+![](./Res/ReadMe_Res3/228.png)
+
+我们顺便测测我们的依赖属性吧，Secondary Attributes 有些是依赖 Primary Attributes 的：
+
+![](./Res/ReadMe_Res3/229.png)
+
+一切顺利，不是吗
+
+![](./Res/ReadMe_Res3/230.png)
+
+> 所以现在我们有了这个漂亮的、健壮的系统，其中我们的属性菜单有小部件，每个小部件都有它们自己的属性标记，它们都响应从我们的窗口小部件控制器广播过来的委托。
+
+所以，再一次，出色的工作！
+
+<br>
+<br>
+
+那么，这篇篇幅也有点长了，我决定在这里做一次收尾。
+
+下一篇，我们会看到 Gameplay Abilities 和 Ability Tasks 等更多精彩内容！
+
+拼图就快完成了，不是吗 ^ ^
+
+<br>
+<br>
+
 The end.
