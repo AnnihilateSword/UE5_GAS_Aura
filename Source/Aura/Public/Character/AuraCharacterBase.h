@@ -8,6 +8,7 @@
 #include "Interaction/CombatInterface.h"
 #include "AuraCharacterBase.generated.h"
 
+class UGameplayAbility;
 class UAbilitySystemComponent;
 class UAttributeSet;
 class UGameplayEffect;
@@ -39,11 +40,20 @@ protected:
 
 	// 初始化默认属性
 	void InitializeDefaultAttributes() const;
+
+	// 为角色添加能力
+	void AddCharacterAbilities();
+
+	virtual FVector GetCombatSocketLocation() override;
 	
 protected:
 	// 角色手持的武器
 	UPROPERTY(EditAnywhere, Category = "Combat")
 	TObjectPtr<USkeletalMeshComponent> m_Weapon;
+
+	// 武器尖端插槽名称
+	UPROPERTY(EditAnywhere, Category = "Combat")
+	FName m_WeaponTipSocketName;
 
 	// 这里在基类存储一份 AbilitySystemComponent 和 AttributeSet 但是不在基类中构造
 	// 玩家会在 PlayerState 中构造，敌人 AI 会在敌人类中构造
@@ -64,4 +74,8 @@ protected:
 	// 该 GE 用来初始化 Vital 属性
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attributes")
 	TSubclassOf<UGameplayEffect> m_DefaultVitalAttributesEffect;
+
+private:
+	UPROPERTY(EditAnywhere, Category = "Abilities")
+	TArray<TSubclassOf<UGameplayAbility>> m_StartupAbilities;
 };

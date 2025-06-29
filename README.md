@@ -1,7 +1,10 @@
 # UE5_GameplayAbilitySystem_Aura
 
 > Online repo for Gameplay Ability System
+> 
 > UE5.5.3
+
+我的代码：https://github.com/AnnihilateSword/UE5_GAS_Aura
 
 <br>
 <br>
@@ -4962,11 +4965,1817 @@ void UAttributeMenuWidgetController::BroadcastAttributeInfo(const FGameplayTag& 
 <br>
 <br>
 
-那么，这篇篇幅也有点长了，我决定在这里做一次收尾。
+那么，这卷篇幅也有点长了，我决定在这收尾。
 
-下一篇，我们会看到 Gameplay Abilities 和 Ability Tasks 等更多精彩内容！
+下一卷，我们会看到 Gameplay Abilities 和 Ability Tasks 等更多精彩内容！
 
 **拼图就快完成了，不是吗 ^ ^**
+
+<br>
+<br>
+
+# 第9节：Gameplay Abilities（游戏能力）
+
+## Gameplay Abilities
+
+**Gameplay Abilities（游戏能力）是 GAS 的核心。**
+
+官方文档：https://dev.epicgames.com/documentation/en-us/unreal-engine/using-gameplay-abilities-in-unreal-engine
+
+**GA 是 Actor 在游戏中可以执行的动作或技能，这是一个从 UGameplayAbility 派生出来的类，在它可以使用的情况下，它定义了一个能力的作用和条件。** 因此，GA 并非通过简单的函数来实现操作，而是一个异步运行的实例对象。它可以在某个时间点被激活，并运行多阶段任务，而不是跨越时间段。
+
+跟 GE 一样，GA 也支持复制和预测。游戏技能也有成本和冷却时间的概念，属性资源必须以足够的数量支付激活能力的费用。资源可以是任何状态，并且冷却时间会阻止该能力再次被激活，直到冷却时间结束。
+
+![](./Res/ReadMe_Res4/231.png)
+
+**游戏玩法能力（GA）使用能力任务（Gameplay Task），不过我们一般可能使用从 UGameplayTask 派生出来的 UAbilityTask**
+
+这些能力任务（GT）在游戏能力（GA）执行期间执行异步工作。它们可以通过广播委托来影响执行流。
+
+这些任务可以在 C++ 中使用，也可以在蓝图中使用。基本上，游戏中发生了一些事情，Ability Task（GT） 将在蓝图中 Broadcast 一个委托。这使我们能够轻松地在蓝图中规划出能力控制流程，并且**我们仍能享受到 C++ 最佳性能带来的好处，因为任务所执行的工作通常是在 C++ 中完成的。（尽管不一定必须如此）**
+
+但由于我们能够设计出这些能力任务（GT），并让它们在 C++ 中完成大部分工作，因此我们获得了灵活性，能够在能力蓝图中设计游戏玩法能力的机制，并让那些无法接触 C++ 领域的设计师能够对能力进行更多控制，同时又不会牺牲性能。
+
+![](./Res/ReadMe_Res4/232.png)
+
+要使用一种游戏玩法能力，必须先使能力系统组件（ASC）具备该能力。一旦完成这一操作，就会创建一个游戏玩法能力规格（FGameplayAbilitySpec），并且该 Spec 会定义与该特定能力相关的所有细节，包括游戏玩法能力、所属职业、能力等级以及任何可在运行时更改的动态信息。
+
+能力通常是在服务器端授予的，但当这种情况发生时，能力的属性会向下复制到所属客户端，这样玩家就可以在游戏过程中激活这些能力了。
+
+**游戏能力（GA）有激活的概念。一旦激活的技能就会一直处于激活状态，直到它们被结束或被取消为止。**
+
+![](./Res/ReadMe_Res4/233.png)
+
+能力可以从内部中止，也可以从外部取消。
+
+**总而言之**，游戏玩法能力指的是那些定义了某种特定技能、法术或任何一种可由角色施展的能力的类别。**要使某个能力系统组件（ASC）能够使用（GA），就必须先赋予其相关能力。** 我们是在服务器端进行这一操作的，此时**会为该能力指定 Spec**，并将其复制到相关的客户端上。要使用某个能力，就必须先激活它。此后，该能力即处于激活状态，直至结束或被取消。能力（GA）具备成本和冷却时间的内置概念。**能力可以异步运行，且同一时间可以有多个能力处于激活状态。一个能力可以执行能力任务，这些任务是异步操作，将行为封装到单独的类中，每个类都能执行其特定的任务。**
+
+![](./Res/ReadMe_Res4/234.png)
+
+<br>
+
+## 授予能力（Granting Abilities）
+
+一般来说，我们都会创建一个 C++ 基类，这样如果我们有任何公共的能力，我们项目中所有的 GA 都可以继承使用。
+
+我们给我们的角色（AAuraCharacterBase）一个能力列表，然后还会创建一个接口来添加这些能力（需要使用 ASC 来处理），因为需要使用 ASC，让我们也在我们的 ASC 上新增一个 public 接口来启动这些能力。
+
+![](./Res/ReadMe_Res4/235.png)
+
+![](./Res/ReadMe_Res4/236.png)
+
+<br>
+
+AuraAbilitySystemComponent.h
+
+```cpp
+UCLASS()
+class AURA_API UAuraAbilitySystemComponent : public UAbilitySystemComponent
+{
+	GENERATED_BODY()
+
+public:
+	void AbilityActorInfoSet();
+
+	// 为角色添加能力 
+	void AddCharacterAbilities(const TArray<TSubclassOf<UGameplayAbility>>& StartupAbilities);
+	
+protected:
+	void EffectApplied(UAbilitySystemComponent* AbilitySystemComponent, const FGameplayEffectSpec& EffectSpec, FActiveGameplayEffectHandle ActiveEffectHandle);
+
+public:
+	// 用来通知给 WidgetController，当我们被应用了能力并改变各种标签时
+	// 我们绑定到任何这个委托的类都将收到 TagContanier 这个参数
+	FEffectAssetTag m_EffectAssetTag;
+};
+```
+
+AuraAbilitySystemComponent.cpp
+
+```cpp
+void UAuraAbilitySystemComponent::AddCharacterAbilities(const TArray<TSubclassOf<UGameplayAbility>>& StartupAbilities)
+{
+	for (TSubclassOf<UGameplayAbility> AbilityClass : StartupAbilities)
+	{
+		FGameplayAbilitySpec AbilitySpec = FGameplayAbilitySpec(AbilityClass, 1);
+		// GiveAbility(AbilitySpec);
+		// 你也可以选择在授予能力之后并立即激活一次能力
+		GiveAbilityAndActivateOnce(AbilitySpec);
+	}
+}
+```
+
+添加 m_StartupAbilities 和 AddCharacterAbilities()
+
+AuraCharacterBase.h
+
+```cpp
+// Copyright AnnihilateSword.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/Character.h"
+#include "AbilitySystemInterface.h"
+#include "Interaction/CombatInterface.h"
+#include "AuraCharacterBase.generated.h"
+
+class UGameplayAbility;
+class UAbilitySystemComponent;
+class UAttributeSet;
+class UGameplayEffect;
+
+UCLASS(Abstract)
+class AURA_API AAuraCharacterBase : public ACharacter, public IAbilitySystemInterface, public ICombatInterface
+{
+	GENERATED_BODY()
+
+	...
+
+protected:
+	...
+
+	// 为角色添加能力
+	void AddCharacterAbilities(); 
+	
+protected:
+	...
+
+private:
+	UPROPERTY(EditAnywhere, Category = "Abilities")
+	TArray<TSubclassOf<UGameplayAbility>> m_StartupAbilities;
+};
+
+```
+
+AuraCharacterBase.cpp
+
+```cpp
+void AAuraCharacterBase::AddCharacterAbilities()
+{
+	UAuraAbilitySystemComponent* AuraASC = CastChecked<UAuraAbilitySystemComponent>(m_AbilitySystemComponent);
+	if (!HasAuthority())
+		return;
+
+	AuraASC->AddCharacterAbilities(m_StartupAbilities);
+}
+```
+
+对于 AuraCharacter 一个好的调用地方是紧接着 AAuraCharacter::PossessedBy 中的 InitAbilityActorInfo() 调用后
+
+AuraCharacter.cpp
+
+```cpp
+void AAuraCharacter::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+
+	// Init Ability Actor Info for [Server].
+	InitAbilityActorInfo();
+	AddCharacterAbilities();
+}
+```
+
+现在让我们在蓝图创建一个 GA 用来做测试：
+
+这里我们注意到 GA 蓝图默认有两个事件：ActiveAbility 和 OnEndAbility，当然也有 C++ 版的
+
+![](./Res/ReadMe_Res4/237.png)
+
+其实官方代码就是很好的注释，可以看看 GameplayAbility.h
+
+![](./Res/ReadMe_Res4/238.png)
+
+![](./Res/ReadMe_Res4/239.png)
+
+![](./Res/ReadMe_Res4/240.png)
+
+<br>
+
+## 游戏能力设置
+
+![](./Res/ReadMe_Res4/241.png)
+
+**Ability Tags**：这个能力拥有的标签
+
+**Cancel Abilities with Tag**：当这个能力被执行时，带有这些标签的能力会被取消
+
+**Block Abilities with Tag**：当这个能力被执行时，带有这些标签的能力会被屏蔽
+
+**Activation Owned Tags**：在该能力生效期间，用于激活所有者的标签。如果在 “AbilitySystemGlobals” 中启用了 “ReplicateActivationOwnedTags” 选项，那么这些内容将会被复制。
+
+**Activation Required Tags**：只有当激活该能力的 Actor/组件 带有所有这些标签时，该能力才能被激活。
+
+**Activation Blocked Tags**：如果激活该动作或组件的 Actor/组件 带有所有这些标签，那么此能力将会被阻断。
+
+**Source Required Tags**：只有当源 Actor/组件 带有所有这些标签时，此能力才能被激活。
+
+**Source Blocked Tags**：如果源 Actor/组件 带有所有这些标签，那么此能力将会被阻断。
+
+**Target Required Tags**：只有当目标 Actor/组件 带有所有这些标签时，此能力才能被激活。
+
+**Target Blocked Tags**：如果目标 Actor/组件 带有所有这些标签，那么此能力将会被阻断。
+
+![](./Res/ReadMe_Res4/242.png)
+
+> 比较基础且常用的一些，比如能力是有花费（Costs）和冷却（Cooldowns）的，这些都可以跟 GE 关联，可以用 GE 做很多事，比如修改属性。
+
+![](./Res/ReadMe_Res4/243.png)
+
+对于 Non-Instanced 策略，我们不能将这种能力绑定到能力任务（Ability Task），即使它相当有限，但有时我们可以用它得到最好的性能。（这有点像静态函数库，对吧？）
+
+让我们也谈谈网络执行策略（Net Execution Policy）以及这些选项给我们带来了什么。
+
+![](./Res/ReadMe_Res4/244.png)
+
+对于 Server Initialed 策略，它表示首先在服务器上运行，然后复制到客户端，也就是说没有预测行为。（可能不常使用，但这是一个选择）
+
+**对于我们的大多数能力来说，局部预测可能就足够了。**
+
+<br>
+
+接下来看看  **Replication Policy：**
+
+> 我们一定要设置成 No Not Replicate 吗，选择 Replicate 呢？
+> 游戏功能已经从服务器复制到所有客户端，如果我们使用本地预测，我们可以利用预测。我们不需要修改复制策略。
+
+**GA（游戏能力）默认情况下会自动复制。所以我们不必更改复制策略。【我们不用更改这个默认选项！】**
+
+<br>
+
+**我们不应该使用的东西：**
+
+![](./Res/ReadMe_Res4/245.png)
+
+👉https://epicgames.ent.box.com/s/m1egifkxv3he3u3xezb9hzbgroxyhx89
+
+<br>
+
+## Input Config Data Assets
+
+> 将我们的能力跟输入绑定。比如左键点击移动，右键点击 平A，1234等放技能
+
+我们会模仿 Lyra 做一个简单的系统
+
+![](./Res/ReadMe_Res4/246.png)
+
+现在我们要做的事情是将我们的输入跟游戏标签绑定起来。
+
+做个数据资产（DataAsset）
+
+![](./Res/ReadMe_Res4/247.png)
+
+![](./Res/ReadMe_Res4/248.png)
+
+AuraInputConfig.h
+
+```cpp
+// Copyright AnnihilateSword.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
+#include "Engine/DataAsset.h"
+#include "AuraInputConfig.generated.h"
+
+USTRUCT(BlueprintType)
+struct FAuraInputAction
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly)
+	const class UInputAction* InputAction = nullptr;
+
+	UPROPERTY(EditDefaultsOnly)
+	FGameplayTag InputTag = FGameplayTag();	
+};
+
+
+/**
+ * 
+ */
+UCLASS()
+class AURA_API UAuraInputConfig : public UDataAsset
+{
+	GENERATED_BODY()
+
+public:
+	const UInputAction* FindAbilityInputActionForTag(const FGameplayTag& InputTag, bool bLogNotFound = false) const;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	TArray<FAuraInputAction> AbilityInputActions;
+};
+
+```
+
+AuraInputConfig.cpp
+
+```cpp
+// Copyright AnnihilateSword.
+
+
+#include "Input/AuraInputConfig.h"
+
+const UInputAction* UAuraInputConfig::FindAbilityInputActionForTag(const FGameplayTag& InputTag, bool bLogNotFound) const
+{
+	for (const FAuraInputAction& Action: AbilityInputActions)
+	{
+		if (Action.InputAction && Action.InputTag == InputTag)
+		{
+			return Action.InputAction;
+		}
+	}
+
+	if (bLogNotFound)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Can't find AbilityInputAction for InputTag [%s], on InputConfig [%s]"), *InputTag.ToString(), *GetNameSafe(this));
+	}
+
+	return nullptr;
+}
+
+```
+
+在 AuraGameplayTags.h 中添加 FGameplayTag
+
+```cpp
+struct FAuraGameplayTags
+{
+	...
+
+	FGameplayTag Attributes_Secondary_MaxHealth;
+	FGameplayTag Attributes_Secondary_MaxMana;
+
+	FGameplayTag InputTag_LMB;
+	FGameplayTag InputTag_RMB;
+	FGameplayTag InputTag_1;
+	FGameplayTag InputTag_2;
+	FGameplayTag InputTag_3;
+	FGameplayTag InputTag_4;
+	
+private:
+	static FAuraGameplayTags GameplayTags;
+};
+```
+
+AuraGameplayTags.cpp
+
+```cpp
+// Copyright AnnihilateSword.
+
+
+#include "AuraGameplayTags.h"
+#include "GameplayTagsManager.h"
+
+FAuraGameplayTags FAuraGameplayTags::GameplayTags;
+
+void FAuraGameplayTags::InitializeNativeGameplayTags()
+{
+	/*
+	 * Secondary Attributes
+	 */
+	...
+	...
+
+	/*
+	 * Input Tags
+	 */
+	GameplayTags.InputTag_LMB = UGameplayTagsManager::Get().AddNativeGameplayTag(
+		FName("InputTag.LMB"),
+		FString("Input Tag for Left Mouse Button")
+		);
+
+	GameplayTags.InputTag_RMB = UGameplayTagsManager::Get().AddNativeGameplayTag(
+		FName("InputTag.RMB"),
+		FString("Input Tag for Right Mouse Button")
+		);
+
+	GameplayTags.InputTag_1 = UGameplayTagsManager::Get().AddNativeGameplayTag(
+		FName("InputTag.1"),
+		FString("Input Tag for 1 Key")
+		);
+
+	GameplayTags.InputTag_2 = UGameplayTagsManager::Get().AddNativeGameplayTag(
+		FName("InputTag.2"),
+		FString("Input Tag for 2 Key")
+		);
+
+	GameplayTags.InputTag_3 = UGameplayTagsManager::Get().AddNativeGameplayTag(
+		FName("InputTag.3"),
+		FString("Input Tag for 3 Key")
+		);
+
+	GameplayTags.InputTag_4 = UGameplayTagsManager::Get().AddNativeGameplayTag(
+		FName("InputTag.4"),
+		FString("Input Tag for 4 Key")
+		);
+}
+
+```
+
+创建对应的 InputAction，这里全部用 Axis 1D (float)
+
+![](./Res/ReadMe_Res4/249.png)
+
+![](./Res/ReadMe_Res4/250.png)
+
+添加到我们的输入映射上下文（InputMappingContext）
+
+![](./Res/ReadMe_Res4/251.png)
+
+**创建 DA_AuraInputAction，并将 InputAction 于对应 Tag 绑定：**
+
+![](./Res/ReadMe_Res4/252.png)
+
+![](./Res/ReadMe_Res4/253.png)
+
+<br>
+
+## Aura Input Component
+
+创建我们自己的 Enhanced Input Component 处理输入绑定：
+
+![](./Res/ReadMe_Res4/254.png)
+
+![](./Res/ReadMe_Res4/255.png)
+
+AuraInputComponent.h
+
+```cpp
+// Copyright AnnihilateSword.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "AuraInputConfig.h"
+#include "EnhancedInputComponent.h"
+#include "AuraInputComponent.generated.h"
+
+/**
+ * 
+ */
+UCLASS()
+class AURA_API UAuraInputComponent : public UEnhancedInputComponent
+{
+	GENERATED_BODY()
+
+public:
+	template<class UserClass, typename PressedFuncType, typename ReleasedFuncType, typename HeldFuncType>
+	void BindAbilityActions(const UAuraInputConfig* InputConfig, UserClass* Object, PressedFuncType PressedFunc, ReleasedFuncType ReleasedFunc, HeldFuncType HeldFunc);
+};
+
+template <class UserClass, typename PressedFuncType, typename ReleasedFuncType, typename HeldFuncType>
+void UAuraInputComponent::BindAbilityActions(const UAuraInputConfig* InputConfig, UserClass* Object, PressedFuncType PressedFunc, ReleasedFuncType ReleasedFunc, HeldFuncType HeldFunc)
+{
+	check(InputConfig);
+
+	for (const FAuraInputAction& Action : InputConfig->AbilityInputActions)
+	{
+		if (Action.InputAction && Action.InputTag.IsValid())
+		{
+			if (PressedFunc)
+			{
+				BindAction(Action.InputAction, ETriggerEvent::Started, Object, PressedFunc, Action.InputTag);
+			}
+
+			if (ReleasedFunc)
+			{
+				BindAction(Action.InputAction, ETriggerEvent::Completed, Object, ReleasedFunc, Action.InputTag);
+			}
+			
+			if (HeldFunc)
+			{
+				BindAction(Action.InputAction, ETriggerEvent::Triggered, Object, HeldFunc, Action.InputTag);
+			}
+		}
+	}
+}
+
+```
+
+AuraInputComponent.cpp
+
+```cpp
+// Copyright AnnihilateSword.
+
+
+#include "Input/AuraInputComponent.h"
+```
+
+<br>
+
+## 给能力输入设置回调
+
+AuraPlayerController.h
+
+```cpp
+// Copyright AnnihilateSword.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/PlayerController.h"
+#include "GameplayTagContainer.h"
+#include "AuraPlayerController.generated.h"
+
+class UAuraInputConfig;
+struct FInputActionValue;
+class UInputMappingContext;
+class UInputAction;
+class IHighlightInterface;
+
+/**
+ * 
+ */
+UCLASS()
+class AURA_API AAuraPlayerController : public APlayerController
+{
+	GENERATED_BODY()
+
+public:
+	AAuraPlayerController();
+
+protected:
+	virtual void BeginPlay() override;
+	virtual void SetupInputComponent() override;
+	virtual void PlayerTick(float DeltaTime) override;
+
+private:
+	/** 角色移动输入处理 */
+	void Move(const FInputActionValue& Value);
+
+	/** 光标信息追踪处理，高亮显示相关 Actor */
+	void CursorTrace();
+
+	void AbilityInputTagPressed(FGameplayTag InputTag);
+	void AbilityInputTagReleased(FGameplayTag InputTag);
+	void AbilityInputTagHeld(FGameplayTag InputTag);
+	
+private:
+	UPROPERTY(EditAnywhere, Category = "Input")
+	TObjectPtr<UInputMappingContext> m_AuraContext = nullptr;
+
+	UPROPERTY(EditAnywhere, Category = "Input")
+	TObjectPtr<UInputAction> m_MoveAction = nullptr;
+
+	UPROPERTY()
+	TScriptInterface<IHighlightInterface> m_LastActor;
+	UPROPERTY()
+	TScriptInterface<IHighlightInterface> m_ThisActor;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TObjectPtr<UAuraInputConfig> m_InputConfig = nullptr;
+};
+
+```
+
+AuraPlayerController.cpp
+
+```cpp
+void AAuraPlayerController::SetupInputComponent()
+{
+	Super::SetupInputComponent();
+
+	if (UAuraInputComponent* AuraInputComponent = CastChecked<UAuraInputComponent>(InputComponent))
+	{
+		AuraInputComponent->BindAction(m_MoveAction, ETriggerEvent::Triggered, this, &AAuraPlayerController::Move);
+		
+		AuraInputComponent->BindAbilityActions(m_InputConfig, this, &ThisClass::AbilityInputTagPressed, &ThisClass::AbilityInputTagReleased, &ThisClass::AbilityInputTagHeld);
+	}
+}
+
+void AAuraPlayerController::AbilityInputTagPressed(FGameplayTag InputTag)
+{
+	GEngine->AddOnScreenDebugMessage(1, 3.f, FColor::Red, *InputTag.ToString());
+}
+
+void AAuraPlayerController::AbilityInputTagReleased(FGameplayTag InputTag)
+{
+	GEngine->AddOnScreenDebugMessage(2, 3.f, FColor::Blue, *InputTag.ToString());
+}
+
+void AAuraPlayerController::AbilityInputTagHeld(FGameplayTag InputTag)
+{
+	GEngine->AddOnScreenDebugMessage(3, 3.f, FColor::Green, *InputTag.ToString());
+}
+```
+
+为项目设置我们自定义的增强输入类 AuraInputComponent
+
+![](./Res/ReadMe_Res4/256.png)
+
+![](./Res/ReadMe_Res4/257.png)
+
+![](./Res/ReadMe_Res4/258.png)
+
+**所以现在我们有了数据驱动的输入。这非常强大，因为我们总是可以交换数据资产。** 我们可以在数据资产中配置东西，所有东西都与输入标签相关联。因此，我们可以看到与任何给定输入相关的输入标记，这一点非常重要，
+
+![](./Res/ReadMe_Res4/259.png)
+
+<br>
+
+## Activating Ability【重要】
+
+添加启动能力附带的标签
+
+AuraGameplayAbility.h
+
+```cpp
+UCLASS()
+class AURA_API UAuraGameplayAbility : public UGameplayAbility
+{
+	GENERATED_BODY()
+
+public:
+	// 如果这是一个启动能力（角色在开始就被赋予的能力），那么使用这个标签
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	FGameplayTag m_StartupGameplayTag;
+};
+```
+
+AuraAbilitySystemComponent.cpp
+
+```cpp
+void UAuraAbilitySystemComponent::AddCharacterAbilities(const TArray<TSubclassOf<UGameplayAbility>>& StartupAbilities)
+{
+	for (TSubclassOf<UGameplayAbility> AbilityClass : StartupAbilities)
+	{
+		FGameplayAbilitySpec AbilitySpec = FGameplayAbilitySpec(AbilityClass, 1);
+		// 在游戏中动态的添加或移除能力
+		if (const UAuraGameplayAbility* AuraAbility = Cast<UAuraGameplayAbility>(AbilitySpec.Ability))
+		{
+			// 为启动能力添加启动标签
+			AbilitySpec.GetDynamicSpecSourceTags().AddTag(AuraAbility->m_StartupGameplayTag);
+			GiveAbility(AbilitySpec);
+		}
+	}
+}
+```
+
+> 现在我们在 AuraPlayerController 上做的事情只是打印输出日志，但是我们可以做的是调用 GAS 上的某个函数，当标签传入时，告诉 GAS。嘿，我们正在按这个输入，如果你有任何能力与此输入标签分配，请激活它们，GAS 会查看我们是否传递一个输入标签对应于它的一个可激活能力。
+
+<br>
+
+AuraAbilitySystemComponent.h
+
+添加 AbilityInputTagHeld 和 AbilityInputTagReleased 接口
+
+```cpp
+UCLASS()
+class AURA_API UAuraAbilitySystemComponent : public UAbilitySystemComponent
+{
+	GENERATED_BODY()
+
+public:
+	void AbilityActorInfoSet();
+
+	// 为角色添加能力 
+	void AddCharacterAbilities(const TArray<TSubclassOf<UGameplayAbility>>& StartupAbilities);
+
+	void AbilityInputTagHeld(const FGameplayTag& InputTag);
+	void AbilityInputTagReleased(const FGameplayTag& InputTag);
+	
+protected:
+	void EffectApplied(UAbilitySystemComponent* AbilitySystemComponent, const FGameplayEffectSpec& EffectSpec, FActiveGameplayEffectHandle ActiveEffectHandle);
+
+public:
+	// 用来通知给 WidgetController，当我们被应用了能力并改变各种标签时
+	// 我们绑定到任何这个委托的类都将收到 TagContanier 这个参数
+	FEffectAssetTag m_EffectAssetTag;
+};
+```
+
+AuraAbilitySystemComponent.cpp
+
+Gameplay Ability 自带有输入的概念
+
+```cpp
+void UAuraAbilitySystemComponent::AbilityInputTagHeld(const FGameplayTag& InputTag)
+{
+	if (!InputTag.IsValid()) return;
+
+	for (FGameplayAbilitySpec& AbilitySpec : GetActivatableAbilities())
+	{
+		if (AbilitySpec.DynamicAbilityTags.HasTagExact(InputTag))
+		{
+			// AbilitySpec Input Pressed
+			AbilitySpecInputPressed(AbilitySpec);
+			if (!AbilitySpec.IsActive())
+			{
+				TryActivateAbility(AbilitySpec.Handle);
+			}
+		}
+	}
+}
+
+void UAuraAbilitySystemComponent::AbilityInputTagReleased(const FGameplayTag& InputTag)
+{
+	if (!InputTag.IsValid()) return;
+
+	for (FGameplayAbilitySpec& AbilitySpec : GetActivatableAbilities())
+	{
+		if (AbilitySpec.DynamicAbilityTags.HasTagExact(InputTag))
+		{
+			// AbilitySpec Input Released
+			AbilitySpecInputReleased(AbilitySpec);
+		}
+	}
+}
+```
+
+![](./Res/ReadMe_Res4/260.png)
+
+可以看到是空实现的虚函数，我们重载用我们的实现可以覆盖它
+
+![](./Res/ReadMe_Res4/261.png)
+
+AuraPlayerController.h
+
+添加 GetASC() 函数防止我们频繁的调用 GetAbilitySystemComponent() 接口：
+
+```cpp
+UCLASS()
+class AURA_API AAuraPlayerController : public APlayerController
+{
+	...
+
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TObjectPtr<UAuraInputConfig> m_InputConfig = nullptr;
+
+	UPROPERTY()
+	TObjectPtr<UAuraAbilitySystemComponent> m_AuraAbilitySystemComponent = nullptr;
+
+	UAuraAbilitySystemComponent* GetASC();
+};
+```
+
+AuraPlayerController.cpp
+
+```cpp
+void AAuraPlayerController::AbilityInputTagPressed(FGameplayTag InputTag)
+{
+	// GEngine->AddOnScreenDebugMessage(1, 3.f, FColor::Red, *InputTag.ToString());
+}
+
+void AAuraPlayerController::AbilityInputTagReleased(FGameplayTag InputTag)
+{
+	if (GetASC() == nullptr) return;
+	GetASC()->AbilityInputTagReleased(InputTag);
+}
+
+void AAuraPlayerController::AbilityInputTagHeld(FGameplayTag InputTag)
+{
+	if (GetASC() == nullptr) return;
+	GetASC()->AbilityInputTagHeld(InputTag);
+}
+
+UAuraAbilitySystemComponent* AAuraPlayerController::GetASC()
+{
+	if (m_AuraAbilitySystemComponent == nullptr)
+	{
+		m_AuraAbilitySystemComponent = Cast<UAuraAbilitySystemComponent>(UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(GetPawn<APawn>()));
+	}
+	return m_AuraAbilitySystemComponent;
+}
+```
+
+这里注意，我们是在 ActivateAbility 最后手动执行了 EndAbility，而不是 AbilitySpecInputReleased() 的作用，这里面是空实现，刚刚也看了源码，我们可以重载添加我们自己的实现：
+
+![](./Res/ReadMe_Res4/262.png)
+
+![](./Res/ReadMe_Res4/263.png)
+
+**梳理一下思路：**
+
+- 我们的 AuraPlayerController 每帧监听输入事件
+- AbilityInputTagHeld 和 AbilityInputTagReleased 检查我们的 GetActivatableAbilities() 是否包含与对应输入映射的标签
+- 执行对应按下和松开业务逻辑
+
+![](./Res/ReadMe_Res4/264.png)
+
+<br>
+
+## 点击移动思路
+
+> 感兴趣也可以看看 UE 自带的 TopDown 模板的 C++ 实现
+
+不过这个模板在多人联机时，客户端上短按不能正常移动的问题（后面可能会修复），他调用了 AI 用的函数。这是他的局限性。所以我们不能只使用这个模板的代码，我们还需要做一些复杂的事情。
+
+![](./Res/ReadMe_Res4/265.png)
+
+我们怎么做？
+
+![](./Res/ReadMe_Res4/266.png)
+
+![](./Res/ReadMe_Res4/267.png)
+
+![](./Res/ReadMe_Res4/268.png)
+
+![](./Res/ReadMe_Res4/269.png)
+
+![](./Res/ReadMe_Res4/270.png)
+
+![](./Res/ReadMe_Res4/271.png)
+
+![](./Res/ReadMe_Res4/272.png)
+
+![](./Res/ReadMe_Res4/273.png)
+
+![](./Res/ReadMe_Res4/274.png)
+
+<br>
+
+## 实现点击移动
+
+AuraPlayerController.h
+
+```cpp
+class USplineComponent;
+
+/**
+ * 
+ */
+UCLASS()
+class AURA_API AAuraPlayerController : public APlayerController
+{
+	...
+	
+	UAuraAbilitySystemComponent* GetASC();
+	
+private:
+	...
+
+	UPROPERTY()
+	TObjectPtr<UAuraAbilitySystemComponent> m_AuraAbilitySystemComponent = nullptr;
+
+	/**
+	 * 点击移动
+	 */
+	/** 长按会在每帧调用 AddMovementInput，此时 m_bAutoRunning == false */
+	FVector m_CachedDestination = FVector::ZeroVector;
+	// 跟随光标的时间（判断我们是否只是短暂点击）
+	float m_FollowTime = 0.0f;
+	float m_ShortPressThreshold = 0.5f;
+	// 短按的时候会自动生成平滑的样条曲线，当我们越来越接近目的地时我们也应该取消自动寻路
+	bool m_bAutoRunning = false;
+	// 我们是否瞄准了某个目标，比如鼠标左键点中了敌人（检查我们的 m_ThisActor）
+	bool m_bTargeting = false;
+
+	UPROPERTY(EditDefaultsOnly)
+	float m_AutoRunAcceptanceRadius = 50.0f;
+
+	// 样条曲线允许我们根据一个世界位置（FVector）生成一条平滑的曲线
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<USplineComponent> m_Spline;
+};
+```
+
+AuraPlayerController.cpp
+
+```cpp
+AAuraPlayerController::AAuraPlayerController()
+{
+	bReplicates = true;
+
+	m_Spline = CreateDefaultSubobject<USplineComponent>("Spline");
+}
+
+void AAuraPlayerController::AbilityInputTagPressed(FGameplayTag InputTag)
+{
+	// 如果是鼠标左键
+	if (InputTag.MatchesTagExact(FAuraGameplayTags::Get().InputTag_LMB))
+	{
+		// 检查我们的 m_ThisActor 是否是一个有效的 Actor
+		m_bTargeting = m_ThisActor ? true : false;
+		m_bAutoRunning = false;
+	}
+}
+
+void AAuraPlayerController::AbilityInputTagHeld(FGameplayTag InputTag)
+{
+	// 1. 如果不是鼠标左键，我们激活能力
+	if (!InputTag.MatchesTagExact(FAuraGameplayTags::Get().InputTag_LMB))
+	{
+		if (GetASC())
+		{
+			GetASC()->AbilityInputTagHeld(InputTag);
+		}
+		return;
+	}
+
+	// 2. 我们按下了鼠标左键，并且鼠标在目标上盘旋，我们激活能力
+	if (m_bTargeting)
+	{
+		if (GetASC())
+		{
+			GetASC()->AbilityInputTagHeld(InputTag);
+		}
+	}
+	// 3. 如果按下了鼠标左键，但是没有目标，我们关心我们的移动行为
+	else
+	{
+		m_FollowTime += GetWorld()->GetDeltaSeconds();
+
+		FHitResult Hit;
+		if (GetHitResultUnderCursor(ECC_Visibility, false, Hit))
+		{
+			m_CachedDestination = Hit.ImpactPoint;
+		}
+
+		if (APawn* ControlledPawn = GetPawn())
+		{
+			const FVector WorldDirection = (m_CachedDestination - ControlledPawn->GetActorLocation()).GetSafeNormal();
+			ControlledPawn->AddMovementInput(WorldDirection);
+		}
+	}
+}
+```
+
+运行游戏，可以按住鼠标左键移动，在多人游戏下也是生效的：
+
+![](./Res/ReadMe_Res4/275.gif)
+
+现在我们没有处理路径点生成，所以我们不能通过短暂左键点击移动。
+
+<br>
+
+## 设置自动寻路（Auto Running）
+
+> 现在我们需要处理输入释放的逻辑。
+
+**我们需要导航系统**
+
+![](./Res/ReadMe_Res4/276.png)
+
+AuraPlayerController.cpp
+
+这里只是在松开鼠标左键时，打了几个调试点：
+
+```cpp
+#include "NavigationPath.h"
+#include "NavigationSystem.h"
+
+void AAuraPlayerController::AbilityInputTagReleased(FGameplayTag InputTag)
+{
+	// 1. 如果不是鼠标左键，我们激活能力
+	if (!InputTag.MatchesTagExact(FAuraGameplayTags::Get().InputTag_LMB))
+	{
+		if (GetASC())
+		{
+			GetASC()->AbilityInputTagReleased(InputTag);
+		}
+		return;
+	}
+
+	// 2. 我们按下了鼠标左键，并且鼠标在目标上盘旋，我们激活能力
+	if (m_bTargeting)
+	{
+		if (GetASC())
+		{
+			GetASC()->AbilityInputTagReleased(InputTag);
+		}
+	}
+	// 3. 如果按下了鼠标左键，但是没有目标，我们关心我们的移动行为
+	else
+	{
+		if (m_FollowTime <= m_ShortPressThreshold)
+		{
+			APawn* ControlledPawn = GetPawn();
+			if (UNavigationPath* NavPath = UNavigationSystemV1::FindPathToLocationSynchronously(this, ControlledPawn->GetActorLocation(), m_CachedDestination))
+			{
+				m_Spline->ClearSplinePoints();
+				for (const FVector& PointLoc : NavPath->PathPoints)
+				{
+					m_Spline->AddSplinePoint(PointLoc, ESplineCoordinateSpace::World);
+					DrawDebugSphere(GetWorld(), PointLoc, 8.0f, 8, FColor::Red, false, 5.0f);
+				}
+				m_bAutoRunning = true;
+			}
+		}
+		m_FollowTime = 0.0f;
+		m_bTargeting = false;
+	}
+}
+```
+
+使用 UNavigationSystemV1 前，我们需要为 Level 添加 **Nav Mesh Bounds Volume**
+
+![](./Res/ReadMe_Res4/277.png)
+
+让我们摆放一些建筑，看我们的 NavigationSystem 是否会绕过他
+
+![](./Res/ReadMe_Res4/278.png)
+
+> 场景中添加了 SM_Beacon 柱子
+
+![](./Res/ReadMe_Res4/279.png)
+
+> 注意 UNavigationSystemV1::FindPathToLocationSynchronously 接口在客户端上无效，我们的调试写在这里面，如果你想看到绘制的调试球，可以在监听服务器模式下启动游戏。**不过也可以通过配置允许在客户端上使用！**
+
+![](./Res/ReadMe_Res4/280.png)
+
+也可以手动修改配置文件：
+
+Config/DefaultEngine.ini
+
+添加 bAllowClientSideNavigation=True
+
+```ini
+...
+bUseManualIPAddress=False
+ManualIPAddress=
+
+[/Script/NavigationSystem.NavigationSystemV1]
+bAllowClientSideNavigation=True
+```
+
+接下来来实现 AutoRun 吧：
+
+AuraPlayerController.h
+
+```cpp
+private:
+	void AutoRun();
+```
+
+AuraPlayerController.cpp
+
+```cpp
+void AAuraPlayerController::PlayerTick(float DeltaTime)
+{
+	Super::PlayerTick(DeltaTime);
+
+	// 光标追踪检测
+	CursorTrace();
+	AutoRun();
+}
+
+void AAuraPlayerController::AutoRun()
+{
+	if (!m_bAutoRunning) return;
+	if (APawn* ControlledPawn = GetPawn())
+	{
+		const FVector LocationOnSpline = m_Spline->FindLocationClosestToWorldLocation(ControlledPawn->GetActorLocation(), ESplineCoordinateSpace::World);
+		const FVector Direction = m_Spline->FindDirectionClosestToWorldLocation(LocationOnSpline, ESplineCoordinateSpace::World);
+		ControlledPawn->AddMovementInput(Direction);
+
+		const float DistanceToDestination = (LocationOnSpline - m_CachedDestination).Length();
+		if (DistanceToDestination <= m_AutoRunAcceptanceRadius)
+		{
+			m_bAutoRunning = false;
+		}
+	}
+}
+```
+
+运行游戏当你点击这个柱子的时候（不是敌人），他会找不到最后的导航点，角色就会跑到远处
+
+**比较简单的解决办法是，忽略这些物体的可见性碰撞预设：**
+
+![](./Res/ReadMe_Res4/281.png)
+
+还有一个问题，当我们点击一个不在我们 Nav Mesh Bounds Volume 区域的地方时，角色会跑过去但永远不会靠近这个地方。
+
+**一个简单的方法来解决这个问题，就是简单地把我们生成的路径中的最后一个点设置为我们缓存的目的地：**
+
+![](./Res/ReadMe_Res4/282.png)
+
+![](./Res/ReadMe_Res4/283.gif)
+
+OK，现在我们有了点击移动，它可以在多人游戏中工作，看起来很棒。
+
+<br>
+
+## Code Clean Up
+
+还记得我们已经在 CursorTrace() 里面已经获取过 CursorHitResult 了吗，追踪的通道也是 ECC_Visibility，这里可以做一个优化的是我们可以用一个成员变量缓存起来。
+
+![](./Res/ReadMe_Res4/284.png)
+
+![](./Res/ReadMe_Res4/285.png)
+
+![](./Res/ReadMe_Res4/286.png)
+
+除此之外，AAuraPlayerController::CursorTrace() 接口中的代码也可以压缩一下：
+
+```cpp
+void AAuraPlayerController::CursorTrace()
+{
+	// 第二个参数：不追踪复杂碰撞，只追踪简单碰撞
+	GetHitResultUnderCursor(ECollisionChannel::ECC_Visibility, false, m_CusorResult);
+	if (!m_CusorResult.bBlockingHit)
+		return;
+
+	m_LastActor = m_ThisActor;
+	m_ThisActor = m_CusorResult.GetActor();
+
+	if (m_LastActor != m_ThisActor)
+	{
+		if (m_LastActor) m_LastActor->UnHighlightActor();
+		if (m_ThisActor) m_ThisActor->HighlightActor();
+	}
+}
+```
+
+点击没有 Nav Mesh Bounds Volume 覆盖的地方，NavPath->PathPoints 可能为空：
+
+![](./Res/ReadMe_Res4/287.png)
+
+其他，还有一些只有一行语句的 if 语句可以压缩成一行。
+
+最终代码：
+
+AuraPlayerController.h
+
+```cpp
+// Copyright AnnihilateSword.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/PlayerController.h"
+#include "GameplayTagContainer.h"
+#include "AuraPlayerController.generated.h"
+
+class USplineComponent;
+class UAuraAbilitySystemComponent;
+class UAuraInputConfig;
+struct FInputActionValue;
+class UInputMappingContext;
+class UInputAction;
+class IHighlightInterface;
+
+/**
+ * 
+ */
+UCLASS()
+class AURA_API AAuraPlayerController : public APlayerController
+{
+	GENERATED_BODY()
+
+public:
+	AAuraPlayerController();
+
+protected:
+	virtual void BeginPlay() override;
+	virtual void SetupInputComponent() override;
+	virtual void PlayerTick(float DeltaTime) override;
+
+private:
+	/** 角色移动输入处理 */
+	void Move(const FInputActionValue& Value);
+
+	/** 光标信息追踪处理，高亮显示相关 Actor */
+	void CursorTrace();
+
+	void AbilityInputTagPressed(FGameplayTag InputTag);
+	void AbilityInputTagReleased(FGameplayTag InputTag);
+	void AbilityInputTagHeld(FGameplayTag InputTag);
+	
+	UAuraAbilitySystemComponent* GetASC();
+
+	void AutoRun();
+	
+private:
+	UPROPERTY(EditAnywhere, Category = "Input")
+	TObjectPtr<UInputMappingContext> m_AuraContext = nullptr;
+
+	UPROPERTY(EditAnywhere, Category = "Input")
+	TObjectPtr<UInputAction> m_MoveAction = nullptr;
+
+	UPROPERTY()
+	TScriptInterface<IHighlightInterface> m_LastActor;
+	UPROPERTY()
+	TScriptInterface<IHighlightInterface> m_ThisActor;
+	FHitResult m_CusorResult;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TObjectPtr<UAuraInputConfig> m_InputConfig = nullptr;
+
+	UPROPERTY()
+	TObjectPtr<UAuraAbilitySystemComponent> m_AuraAbilitySystemComponent = nullptr;
+
+	/**
+	 * 点击移动
+	 */
+	/** 长按会在每帧调用 AddMovementInput，此时 m_bAutoRunning == false */
+	FVector m_CachedDestination = FVector::ZeroVector;
+	// 跟随光标的时间（判断我们是否只是短暂点击）
+	float m_FollowTime = 0.0f;
+	float m_ShortPressThreshold = 0.5f;
+	// 短按的时候会自动生成平滑的样条曲线，当我们越来越接近目的地时我们也应该取消自动寻路
+	bool m_bAutoRunning = false;
+	// 我们是否瞄准了某个目标，比如鼠标左键点中了敌人（检查我们的 m_ThisActor）
+	bool m_bTargeting = false;
+
+	UPROPERTY(EditDefaultsOnly)
+	float m_AutoRunAcceptanceRadius = 50.0f;
+
+	// 样条曲线允许我们根据一个世界位置（FVector）生成一条平滑的曲线
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<USplineComponent> m_Spline;
+};
+
+```
+
+AuraPlayerController.cpp
+
+```cpp
+// Copyright AnnihilateSword.
+
+
+#include "Player/AuraPlayerController.h"
+
+#include "AbilitySystemBlueprintLibrary.h"
+#include "AuraGameplayTags.h"
+#include "EnhancedInputSubsystems.h"
+#include "EnhancedInputComponent.h"
+#include "NavigationPath.h"
+#include "NavigationSystem.h"
+#include "AbilitySystem/AuraAbilitySystemComponent.h"
+#include "Components/SplineComponent.h"
+#include "Input/AuraInputComponent.h"
+#include "Interaction/HighlightInterface.h"
+
+AAuraPlayerController::AAuraPlayerController()
+{
+	bReplicates = true;
+	m_Spline = CreateDefaultSubobject<USplineComponent>("Spline");
+}
+
+void AAuraPlayerController::BeginPlay()
+{
+	Super::BeginPlay();
+	check(m_AuraContext);
+
+	if (IsLocalController())
+	{
+		// Add Aura Input Mapping Context.
+		UEnhancedInputLocalPlayerSubsystem* EnhancedInputLocalPlayerSubsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer());
+		if (EnhancedInputLocalPlayerSubsystem)
+		{
+			EnhancedInputLocalPlayerSubsystem->AddMappingContext(m_AuraContext, 0);
+		}
+	}
+
+	// Set Mouse Cursor and Input Mode.
+	bShowMouseCursor = true;
+	DefaultMouseCursor = EMouseCursor::Type::Default;
+
+	FInputModeGameAndUI InputModeData;
+	InputModeData.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	InputModeData.SetHideCursorDuringCapture(false);
+	SetInputMode(InputModeData);
+}
+
+void AAuraPlayerController::SetupInputComponent()
+{
+	Super::SetupInputComponent();
+
+	if (UAuraInputComponent* AuraInputComponent = CastChecked<UAuraInputComponent>(InputComponent))
+	{
+		AuraInputComponent->BindAction(m_MoveAction, ETriggerEvent::Triggered, this, &AAuraPlayerController::Move);
+		
+		AuraInputComponent->BindAbilityActions(m_InputConfig, this, &ThisClass::AbilityInputTagPressed, &ThisClass::AbilityInputTagReleased, &ThisClass::AbilityInputTagHeld);
+	}
+}
+
+void AAuraPlayerController::PlayerTick(float DeltaTime)
+{
+	Super::PlayerTick(DeltaTime);
+
+	// 光标追踪检测
+	CursorTrace();
+	AutoRun();
+}
+
+void AAuraPlayerController::Move(const FInputActionValue& Value)
+{
+	const FVector2D InputAxisVector = Value.Get<FVector2D>();
+	const FRotator Rotation = GetControlRotation();
+	const FRotator YawRotation(0.0f, Rotation.Yaw, 0.0f);
+
+	const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+	const FVector RightDirection = FRotationMatrix(Rotation).GetUnitAxis(EAxis::Y);
+
+	if (APawn* ControlledPawn = GetPawn())
+	{
+		ControlledPawn->AddMovementInput(ForwardDirection, InputAxisVector.Y);
+		ControlledPawn->AddMovementInput(RightDirection, InputAxisVector.X);
+	}
+}
+
+void AAuraPlayerController::CursorTrace()
+{
+	// 第二个参数：不追踪复杂碰撞，只追踪简单碰撞
+	GetHitResultUnderCursor(ECollisionChannel::ECC_Visibility, false, m_CusorResult);
+	if (!m_CusorResult.bBlockingHit)
+		return;
+
+	m_LastActor = m_ThisActor;
+	m_ThisActor = m_CusorResult.GetActor();
+
+	if (m_LastActor != m_ThisActor)
+	{
+		if (m_LastActor) m_LastActor->UnHighlightActor();
+		if (m_ThisActor) m_ThisActor->HighlightActor();
+	}
+}
+
+void AAuraPlayerController::AbilityInputTagPressed(FGameplayTag InputTag)
+{
+	// 如果是鼠标左键
+	if (InputTag.MatchesTagExact(FAuraGameplayTags::Get().InputTag_LMB))
+	{
+		// 检查我们的 m_ThisActor 是否是一个有效的 Actor
+		m_bTargeting = m_ThisActor ? true : false;
+		m_bAutoRunning = false;
+	}
+}
+
+void AAuraPlayerController::AbilityInputTagReleased(FGameplayTag InputTag)
+{
+	// 1. 如果不是鼠标左键，我们激活能力
+	if (!InputTag.MatchesTagExact(FAuraGameplayTags::Get().InputTag_LMB))
+	{
+		if (GetASC()) GetASC()->AbilityInputTagReleased(InputTag);
+		return;
+	}
+
+	// 2. 我们按下了鼠标左键，并且鼠标在目标上盘旋，我们激活能力
+	if (m_bTargeting)
+	{
+		if (GetASC()) GetASC()->AbilityInputTagReleased(InputTag);
+	}
+	// 3. 如果按下了鼠标左键，但是没有目标，我们关心我们的移动行为
+	else
+	{
+		if (m_FollowTime <= m_ShortPressThreshold)
+		{
+			const APawn* ControlledPawn = GetPawn();
+			if (UNavigationPath* NavPath = UNavigationSystemV1::FindPathToLocationSynchronously(this, ControlledPawn->GetActorLocation(), m_CachedDestination))
+			{
+				m_Spline->ClearSplinePoints();
+				for (const FVector& PointLoc : NavPath->PathPoints)
+				{
+					m_Spline->AddSplinePoint(PointLoc, ESplineCoordinateSpace::World);
+				}
+				if (NavPath->PathPoints.Num() > 0)
+				{
+					m_CachedDestination = NavPath->PathPoints[NavPath->PathPoints.Num() - 1];
+					m_bAutoRunning = true;
+				}
+			}
+		}
+		m_FollowTime = 0.0f;
+		m_bTargeting = false;
+	}
+}
+
+void AAuraPlayerController::AbilityInputTagHeld(FGameplayTag InputTag)
+{
+	// 1. 如果不是鼠标左键，我们激活能力
+	if (!InputTag.MatchesTagExact(FAuraGameplayTags::Get().InputTag_LMB))
+	{
+		if (GetASC()) GetASC()->AbilityInputTagHeld(InputTag);
+		return;
+	}
+
+	// 2. 我们按下了鼠标左键，并且鼠标在目标上盘旋，我们激活能力
+	if (m_bTargeting)
+	{
+		if (GetASC()) GetASC()->AbilityInputTagHeld(InputTag);
+	}
+	// 3. 如果按下了鼠标左键，但是没有目标，我们关心我们的移动行为
+	else
+	{
+		m_FollowTime += GetWorld()->GetDeltaSeconds();
+		if (m_CusorResult.bBlockingHit) m_CachedDestination = m_CusorResult.ImpactPoint;
+
+		if (APawn* ControlledPawn = GetPawn())
+		{
+			const FVector WorldDirection = (m_CachedDestination - ControlledPawn->GetActorLocation()).GetSafeNormal();
+			ControlledPawn->AddMovementInput(WorldDirection);
+		}
+	}
+}
+
+UAuraAbilitySystemComponent* AAuraPlayerController::GetASC()
+{
+	if (m_AuraAbilitySystemComponent == nullptr)
+	{
+		m_AuraAbilitySystemComponent = Cast<UAuraAbilitySystemComponent>(UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(GetPawn<APawn>()));
+	}
+	return m_AuraAbilitySystemComponent;
+}
+
+void AAuraPlayerController::AutoRun()
+{
+	if (!m_bAutoRunning) return;
+	if (APawn* ControlledPawn = GetPawn())
+	{
+		const FVector LocationOnSpline = m_Spline->FindLocationClosestToWorldLocation(ControlledPawn->GetActorLocation(), ESplineCoordinateSpace::World);
+		const FVector Direction = m_Spline->FindDirectionClosestToWorldLocation(LocationOnSpline, ESplineCoordinateSpace::World);
+		ControlledPawn->AddMovementInput(Direction);
+
+		const float DistanceToDestination = (LocationOnSpline - m_CachedDestination).Length();
+		if (DistanceToDestination <= m_AutoRunAcceptanceRadius)
+		{
+			m_bAutoRunning = false;
+		}
+	}
+}
+
+```
+
+最后我们还要再修复一个问题，我们在客户端上拾取药水没有显示消息提示 Widget：
+
+我们需要修改一下 AuraAbilitySystemComponent
+
+![](./Res/ReadMe_Res4/288.png)
+
+AuraAbilitySystemComponent.h
+
+```cpp
+protected:
+	UFUNCTION(Client, Reliable)
+	void ClientEffectApplied(UAbilitySystemComponent* AbilitySystemComponent, const FGameplayEffectSpec& EffectSpec, FActiveGameplayEffectHandle ActiveEffectHandle);
+```
+
+AuraAbilitySystemComponent.cpp
+
+```cpp
+void UAuraAbilitySystemComponent::AbilityActorInfoSet()
+{
+	/** 绑定相关委托 */
+	OnGameplayEffectAppliedDelegateToSelf.AddUObject(this, &UAuraAbilitySystemComponent::ClientEffectApplied);
+}
+
+void UAuraAbilitySystemComponent::ClientEffectApplied_Implementation(UAbilitySystemComponent* AbilitySystemComponent,
+                                                const FGameplayEffectSpec& EffectSpec, FActiveGameplayEffectHandle ActiveEffectHandle)
+{
+	FGameplayTagContainer TagContainer;
+	EffectSpec.GetAllAssetTags(TagContainer);
+	// EffectSpec.GetAllGrantedTags(TagContainer);
+
+	// 将 TagContainer 广播
+	m_EffectAssetTag.Broadcast(TagContainer);
+}
+```
+
+我们已经做了一些很好的重构，一切都很顺利，是时候继续前进了。
+
+<br>
+
+## Aura Projectile（抛射物）
+
+> 接下来为角色制作一个法术攻击
+
+![](./Res/ReadMe_Res4/289.png)
+
+![](./Res/ReadMe_Res4/290.png)
+
+AuraProjectile.h
+
+```cpp
+// Copyright AnnihilateSword.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/Actor.h"
+#include "AuraProjectile.generated.h"
+
+class UProjectileMovementComponent;
+class USphereComponent;
+
+UCLASS()
+class AURA_API AAuraProjectile : public AActor
+{
+	GENERATED_BODY()
+	
+public:	
+	AAuraProjectile();
+
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UProjectileMovementComponent> m_ProjectileMovement;
+	
+protected:
+	virtual void BeginPlay() override;
+
+	UFUNCTION()
+	void OnSphereOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+
+private:
+	UPROPERTY(VisibleDefaultsOnly)
+	TObjectPtr<USphereComponent> m_Sphere;
+};
+```
+
+AuraProjectile.cpp
+
+```cpp
+// Copyright AnnihilateSword.
+
+
+#include "Actor/AuraProjectile.h"
+
+#include "Components/SphereComponent.h"
+#include "GameFramework/ProjectileMovementComponent.h"
+
+AAuraProjectile::AAuraProjectile()
+{
+	PrimaryActorTick.bCanEverTick = false;
+
+	m_Sphere = CreateDefaultSubobject<USphereComponent>("Sphere");
+	SetRootComponent(m_Sphere);
+	m_Sphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	m_Sphere->SetCollisionResponseToAllChannels(ECR_Ignore);
+	m_Sphere->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Overlap);
+	m_Sphere->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Overlap);
+	m_Sphere->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+
+	m_ProjectileMovement = CreateDefaultSubobject<UProjectileMovementComponent>("ProjectileMovement");
+	m_ProjectileMovement->InitialSpeed = 550.f;
+	m_ProjectileMovement->MaxSpeed = 550.f;
+	m_ProjectileMovement->ProjectileGravityScale = 0.f;
+}
+
+void AAuraProjectile::BeginPlay()
+{
+	Super::BeginPlay();
+	m_Sphere->OnComponentBeginOverlap.AddDynamic(this, &AAuraProjectile::OnSphereOverlap);
+}
+
+void AAuraProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
+	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+{
+}
+```
+
+![](./Res/ReadMe_Res4/291.png)
+
+![](./Res/ReadMe_Res4/292.png)
+
+![](./Res/ReadMe_Res4/293.png)
+
+把场景地板换了一下
+
+![](./Res/ReadMe_Res4/294.png)
+
+角色相机弹簧臂长度调成了 800.0f
+
+![](./Res/ReadMe_Res4/295.png)
+
+<br>
+
+## Aura Projectile Spell（创建法术能力）
+
+![](./Res/ReadMe_Res4/296.png)
+
+![](./Res/ReadMe_Res4/297.png)
+
+**强烈建议看看 UE 源码 GameplayAbility.h**
+
+ActivateAbility() 似乎是最重要的，我相信你已经注意到了。通过搜索 ActivateAbility 你会发现很多都跟他有关。
+
+> K2 是一种遗留约定，许多引擎类在其函数之前都会有这种约定，如果他们接触到蓝图。表示 Kismet 版本2，用于区分 C++ 和 蓝图函数。
+
+AuraProjectileSpell.h
+
+```cpp
+// Copyright AnnihilateSword.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "AbilitySystem/Abilities/AuraGameplayAbility.h"
+#include "AuraProjectileSpell.generated.h"
+
+/**
+ * 
+ */
+UCLASS()
+class AURA_API UAuraProjectileSpell : public UAuraGameplayAbility
+{
+	GENERATED_BODY()
+
+protected:
+	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
+};
+```
+
+AuraProjectileSpell.cpp
+
+```cpp
+// Copyright AnnihilateSword.
+
+
+#include "AbilitySystem/Abilities/AuraProjectileSpell.h"
+
+#include "Kismet/KismetSystemLibrary.h"
+
+void UAuraProjectileSpell::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
+                                           const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
+                                           const FGameplayEventData* TriggerEventData)
+{
+	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
+
+	// TODO: 生成法术抛射物
+	UKismetSystemLibrary::PrintString(this, FString("ActivateAbility (C++)"), true, true, FColor::Yellow, 3.0f);
+}
+```
+
+![](./Res/ReadMe_Res4/298.png)
+
+![](./Res/ReadMe_Res4/299.png)
+
+![](./Res/ReadMe_Res4/300.png)
+
+还记得我们将输入和能力的绑定：
+
+![](./Res/ReadMe_Res4/301.png)
+
+当我们点击敌人时：
+
+![](./Res/ReadMe_Res4/302.png)
+
+<br>
+
+## Spawning Projectiles（生成投掷物）
+
+> 在激活能力时生成投掷物。
+
+把我们的弹丸 Actor 设置为复制的：
+
+AuraProjectile.cpp
+
+```cpp
+AAuraProjectile::AAuraProjectile()
+{
+	PrimaryActorTick.bCanEverTick = false;
+	bReplicates = true;
+	...
+```
+
+还记得我们的 AuraCharacterBase 类实现了 ICombatInterface 吗，我们可以扩展一下，在这个位置返回一个套接字位置（Socket Location）
+
+**我们依赖抽象而不是具体**
+
+![](./Res/ReadMe_Res4/303.png)
+
+![](./Res/ReadMe_Res4/304.png)
+
+CombatInterface.h
+
+```cpp
+class AURA_API ICombatInterface
+{
+	GENERATED_BODY()
+
+	// Add interface functions to this class. This is the class that will be inherited to implement this interface.
+public:
+	virtual int32 GetPlayerLevel();
+	virtual FVector GetCombatSocketLocation();
+};
+```
+
+CombatInterface.cpp
+
+```cpp
+#include "Interaction/CombatInterface.h"
+
+int32 ICombatInterface::GetPlayerLevel()
+{
+	return 0;
+}
+
+FVector ICombatInterface::GetCombatSocketLocation()
+{
+	return FVector();
+}
+```
+
+![](./Res/ReadMe_Res4/305.png)
+
+AuraCharacterBase.h
+
+```cpp
+protected:
+	...
+	virtual FVector GetCombatSocketLocation() override;
+
+protected:
+	...
+
+	// 武器尖端插槽名称
+	UPROPERTY(EditAnywhere, Category = "Combat")
+	FName m_WeaponTipSocketName;
+```
+
+AuraCharacterBase.cpp
+
+```cpp
+FVector AAuraCharacterBase::GetCombatSocketLocation()
+{
+	check(m_Weapon);
+	return m_Weapon->GetSocketLocation(m_WeaponTipSocketName);
+}
+```
+
+最后再修改我们的 AuraProjectileSpell
+
+AuraProjectileSpell.h
+
+```h
+// Copyright AnnihilateSword.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "AbilitySystem/Abilities/AuraGameplayAbility.h"
+#include "AuraProjectileSpell.generated.h"
+
+class AAuraProjectile;
+/**
+ * 
+ */
+UCLASS()
+class AURA_API UAuraProjectileSpell : public UAuraGameplayAbility
+{
+	GENERATED_BODY()
+
+protected:
+	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	TSubclassOf<AAuraProjectile> m_ProjectileClass;
+};
+```
+
+AuraProjectileSpell.cpp
+
+```cpp
+// Copyright AnnihilateSword.
+
+
+#include "AbilitySystem/Abilities/AuraProjectileSpell.h"
+
+#include "Actor/AuraProjectile.h"
+#include "Interaction/CombatInterface.h"
+
+void UAuraProjectileSpell::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
+                                           const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
+                                           const FGameplayEventData* TriggerEventData)
+{
+	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
+
+	const bool bIsServer = HasAuthority(&ActivationInfo);
+	if (!bIsServer) return;
+
+	ICombatInterface* CombatInterface = Cast<ICombatInterface>(GetAvatarActorFromActorInfo());
+	if (CombatInterface)
+	{
+		const FVector SocketLocation = CombatInterface->GetCombatSocketLocation();
+
+		FTransform SpawnTransform;
+		SpawnTransform.SetLocation(SocketLocation);
+		//TODO: Set the Projectile Rotation
+
+		// 为什么我们用 SpawnActorDeferred 接口去生成 Projectile，因为我们想在生成完成之前做一些任务比如设置一些 GE
+		AAuraProjectile* Projectile = GetWorld()->SpawnActorDeferred<AAuraProjectile>(
+			m_ProjectileClass,
+			SpawnTransform,
+			GetOwningActorFromActorInfo(),
+			Cast<APawn>(GetOwningActorFromActorInfo()),
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+
+		//TODO: Give the Projectile a Gameplay Effect Spec for causing Damage.
+		
+		Projectile->FinishSpawning(SpawnTransform);
+	}
+	
+}
+```
+
+查看我们武器的尖端插槽：
+
+![](./Res/ReadMe_Res4/306.png)
+
+![](./Res/ReadMe_Res4/307.png)
+
+![](./Res/ReadMe_Res4/308.png)
+
+现在我们能发射法术弹药，但是还没有设置 Rotation，而且我们的这个技能只能释放一次，因为我们没有 EndAbility()。我们也行播放一个攻击蒙太奇动画等等。
+
+![](./Res/ReadMe_Res4/309.gif)
+
+我们会在后面继续完善。
+
+![](./Res/ReadMe_Res4/310.png)
+
+![](./Res/ReadMe_Res4/311.png)
 
 <br>
 <br>

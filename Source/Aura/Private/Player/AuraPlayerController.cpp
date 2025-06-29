@@ -3,13 +3,21 @@
 
 #include "Player/AuraPlayerController.h"
 
+#include "AbilitySystemBlueprintLibrary.h"
+#include "AuraGameplayTags.h"
 #include "EnhancedInputSubsystems.h"
 #include "EnhancedInputComponent.h"
+#include "NavigationPath.h"
+#include "NavigationSystem.h"
+#include "AbilitySystem/AuraAbilitySystemComponent.h"
+#include "Components/SplineComponent.h"
+#include "Input/AuraInputComponent.h"
 #include "Interaction/HighlightInterface.h"
 
 AAuraPlayerController::AAuraPlayerController()
 {
 	bReplicates = true;
+	m_Spline = CreateDefaultSubobject<USplineComponent>("Spline");
 }
 
 void AAuraPlayerController::BeginPlay()
@@ -41,9 +49,11 @@ void AAuraPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
 
-	if (UEnhancedInputComponent* EnhancedInputComponent = CastChecked<UEnhancedInputComponent>(InputComponent))
+	if (UAuraInputComponent* AuraInputComponent = CastChecked<UAuraInputComponent>(InputComponent))
 	{
-		EnhancedInputComponent->BindAction(m_MoveAction, ETriggerEvent::Triggered, this, &AAuraPlayerController::Move);
+		AuraInputComponent->BindAction(m_MoveAction, ETriggerEvent::Triggered, this, &AAuraPlayerController::Move);
+		
+		AuraInputComponent->BindAbilityActions(m_InputConfig, this, &ThisClass::AbilityInputTagPressed, &ThisClass::AbilityInputTagReleased, &ThisClass::AbilityInputTagHeld);
 	}
 }
 
@@ -53,6 +63,7 @@ void AAuraPlayerController::PlayerTick(float DeltaTime)
 
 	// 光标追踪检测
 	CursorTrace();
+	AutoRun();
 }
 
 void AAuraPlayerController::Move(const FInputActionValue& Value)
@@ -73,59 +84,121 @@ void AAuraPlayerController::Move(const FInputActionValue& Value)
 
 void AAuraPlayerController::CursorTrace()
 {
-	FHitResult CursorHitResult;
 	// 第二个参数：不追踪复杂碰撞，只追踪简单碰撞
-	GetHitResultUnderCursor(ECollisionChannel::ECC_Visibility, false, CursorHitResult);
-	if (!CursorHitResult.bBlockingHit)
+	GetHitResultUnderCursor(ECollisionChannel::ECC_Visibility, false, m_CusorResult);
+	if (!m_CusorResult.bBlockingHit)
 		return;
 
 	m_LastActor = m_ThisActor;
-	m_ThisActor = CursorHitResult.GetActor();
+	m_ThisActor = m_CusorResult.GetActor();
 
-	/**
-	 * 光标的 line 追踪，分几种情况：
-	 * 1. m_LastActor is null && m_ThisActor is null
-	 *		- Do nothing.
-	 * 2. m_LastActor is null && m_ThisActor is valid
-	 *		- Highligh m_ThisActor.
-	 * 3. m_LastActor is valid && m_ThisActor is null
-	 *		- UnHighligh m_LastActor.
-	 * 4. Both actors are valid, but m_LastActor != m_ThisActor
-	 *		- UnHighligh m_LastActor, and Highligh ThisActor.
-	 * 5. Both actors are valid, and m_LastActor == m_ThisActor
-	 *		- Do nothing.
-	 */
-	if (m_LastActor == nullptr)
+	if (m_LastActor != m_ThisActor)
 	{
-		if (m_ThisActor != nullptr)
-		{
-			// Case 2
-			m_ThisActor->HighlightActor();
-		}
-		else
-		{
-			// Case 1: Do nothing
-		}
+		if (m_LastActor) m_LastActor->UnHighlightActor();
+		if (m_ThisActor) m_ThisActor->HighlightActor();
 	}
+}
+
+void AAuraPlayerController::AbilityInputTagPressed(FGameplayTag InputTag)
+{
+	// 如果是鼠标左键
+	if (InputTag.MatchesTagExact(FAuraGameplayTags::Get().InputTag_LMB))
+	{
+		// 检查我们的 m_ThisActor 是否是一个有效的 Actor
+		m_bTargeting = m_ThisActor ? true : false;
+		m_bAutoRunning = false;
+	}
+}
+
+void AAuraPlayerController::AbilityInputTagReleased(FGameplayTag InputTag)
+{
+	// 1. 如果不是鼠标左键，我们激活能力
+	if (!InputTag.MatchesTagExact(FAuraGameplayTags::Get().InputTag_LMB))
+	{
+		if (GetASC()) GetASC()->AbilityInputTagReleased(InputTag);
+		return;
+	}
+
+	// 2. 我们按下了鼠标左键，并且鼠标在目标上盘旋，我们激活能力
+	if (m_bTargeting)
+	{
+		if (GetASC()) GetASC()->AbilityInputTagReleased(InputTag);
+	}
+	// 3. 如果按下了鼠标左键，但是没有目标，我们关心我们的移动行为
 	else
 	{
-		if (m_ThisActor != nullptr)
+		if (m_FollowTime <= m_ShortPressThreshold)
 		{
-			if (m_LastActor != m_ThisActor)
+			const APawn* ControlledPawn = GetPawn();
+			if (UNavigationPath* NavPath = UNavigationSystemV1::FindPathToLocationSynchronously(this, ControlledPawn->GetActorLocation(), m_CachedDestination))
 			{
-				// Case 4
-				m_LastActor->UnHighlightActor();
-				m_ThisActor->HighlightActor();
-			}
-			else
-			{
-				// Case 5: Do nothing
+				m_Spline->ClearSplinePoints();
+				for (const FVector& PointLoc : NavPath->PathPoints)
+				{
+					m_Spline->AddSplinePoint(PointLoc, ESplineCoordinateSpace::World);
+				}
+				if (NavPath->PathPoints.Num() > 0)
+				{
+					m_CachedDestination = NavPath->PathPoints[NavPath->PathPoints.Num() - 1];
+					m_bAutoRunning = true;
+				}
 			}
 		}
-		else
+		m_FollowTime = 0.0f;
+		m_bTargeting = false;
+	}
+}
+
+void AAuraPlayerController::AbilityInputTagHeld(FGameplayTag InputTag)
+{
+	// 1. 如果不是鼠标左键，我们激活能力
+	if (!InputTag.MatchesTagExact(FAuraGameplayTags::Get().InputTag_LMB))
+	{
+		if (GetASC()) GetASC()->AbilityInputTagHeld(InputTag);
+		return;
+	}
+
+	// 2. 我们按下了鼠标左键，并且鼠标在目标上盘旋，我们激活能力
+	if (m_bTargeting)
+	{
+		if (GetASC()) GetASC()->AbilityInputTagHeld(InputTag);
+	}
+	// 3. 如果按下了鼠标左键，但是没有目标，我们关心我们的移动行为
+	else
+	{
+		m_FollowTime += GetWorld()->GetDeltaSeconds();
+		if (m_CusorResult.bBlockingHit) m_CachedDestination = m_CusorResult.ImpactPoint;
+
+		if (APawn* ControlledPawn = GetPawn())
 		{
-			// Case 3
-			m_LastActor->UnHighlightActor();
+			const FVector WorldDirection = (m_CachedDestination - ControlledPawn->GetActorLocation()).GetSafeNormal();
+			ControlledPawn->AddMovementInput(WorldDirection);
+		}
+	}
+}
+
+UAuraAbilitySystemComponent* AAuraPlayerController::GetASC()
+{
+	if (m_AuraAbilitySystemComponent == nullptr)
+	{
+		m_AuraAbilitySystemComponent = Cast<UAuraAbilitySystemComponent>(UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(GetPawn<APawn>()));
+	}
+	return m_AuraAbilitySystemComponent;
+}
+
+void AAuraPlayerController::AutoRun()
+{
+	if (!m_bAutoRunning) return;
+	if (APawn* ControlledPawn = GetPawn())
+	{
+		const FVector LocationOnSpline = m_Spline->FindLocationClosestToWorldLocation(ControlledPawn->GetActorLocation(), ESplineCoordinateSpace::World);
+		const FVector Direction = m_Spline->FindDirectionClosestToWorldLocation(LocationOnSpline, ESplineCoordinateSpace::World);
+		ControlledPawn->AddMovementInput(Direction);
+
+		const float DistanceToDestination = (LocationOnSpline - m_CachedDestination).Length();
+		if (DistanceToDestination <= m_AutoRunAcceptanceRadius)
+		{
+			m_bAutoRunning = false;
 		}
 	}
 }
